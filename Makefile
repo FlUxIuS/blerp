@@ -1,7 +1,7 @@
 model?=10056
 
-centralid?=0000000000 #board 1
-peripheralid?=000000000 #board 2
+ceid?=0000000000 #board 1
+peid?=0000000000 #board 2
 
 all: central peripheral
 
@@ -45,7 +45,7 @@ build-prph:
 load-prph:
 	newt load nrf52_bleprph --extrajtagcmd "-select usb=$(peripheralid)"
 
-peripheral: set-prph-target-10056 build-prph load-prph 
+peripheral: set-prph-target-10056 build-prph load-prph
 
 # Central
 set-cent-target-10056:
