@@ -19,7 +19,7 @@ The artifact is also available at [doi.org/10.5281/zenodo.17671927](https://doi.
 
 ## Toolkit Setup
 
-1. Setup the workspace
+1. Setup the workspace and patch the NimBLE stack
 
 ```bash
 git clone github.com/sacca97/blerp.git
@@ -48,7 +48,7 @@ Once connected, pressing Tab will show the list of available commands.
 
 This attack maps to Section IV.B of the paper. The user must pair the target Peripheral with a Central device (e.g., a mouse with a laptop or smartphone). Here we assume a mouse with a random BLE address.
 
-The mouse must be paired with the Android device and turned off (or out of range) during the test. Then the user starts by setting the mouse Bluetooth address in the toolkit with:
+The mouse must be paired with the Android device and turned off (or out of range) during the test.
 
 1. Configure the board to spoof the Peripheral, send a fake _authreq_ value, have the lowest security settings, and reject one encrption request
 
