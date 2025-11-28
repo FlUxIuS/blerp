@@ -1332,8 +1332,9 @@ int btshell_gap_event(struct ble_gap_event *event, void *arg)
 				return rc;
 			}
 			/* Immediately start pairing as a Central */
-
-			// ble_gap_security_initiate(event->connect.conn_handle);
+			if(desc.role == BLE_GAP_ROLE_MASTER){
+			    ble_gap_security_initiate(event->connect.conn_handle);
+			}
 		}
 		return 0;
 

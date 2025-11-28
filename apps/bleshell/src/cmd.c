@@ -796,296 +796,309 @@ static const struct shell_cmd_help advertise_help = {
  * $connect                                                                  *
  *****************************************************************************/
 
-// static struct parse_arg_kv_pair cmd_ext_conn_phy_opts[] = {
-//     { "none",        0x00 },
-//     { "1M",          0x01 },
-//     { "coded",       0x02 },
-//     { "both",        0x03 },
-//     { "all",         0x04 },
-//     { NULL }
-// };
+ static struct parse_arg_kv_pair cmd_ext_conn_phy_opts[] = {
+     { "none",        0x00 },
+     { "1M",          0x01 },
+     { "coded",       0x02 },
+     { "both",        0x03 },
+     { "all",         0x04 },
+     { NULL }
+ };
 
-static int cmd_connect(int argc, char **argv)
-{
-  struct ble_gap_conn_params phy_1M_params = {0};
-  struct ble_gap_conn_params phy_coded_params = {0};
-  struct ble_gap_conn_params phy_2M_params = {0};
-  uint8_t ext;
-  int32_t duration_ms;
-  ble_addr_t peer_addr;
-  int own_addr_type;
-  int rc;
+ static int
+ cmd_connect(int argc, char **argv)
+ {
+     struct ble_gap_conn_params phy_1M_params = {0};
+     struct ble_gap_conn_params phy_coded_params = {0};
+     struct ble_gap_conn_params phy_2M_params = {0};
+     uint8_t ext;
+     int32_t duration_ms;
+     ble_addr_t peer_addr;
+     ble_addr_t *peer_addr_param = &peer_addr;
+     int own_addr_type;
+     int rc;
 
-  rc = parse_arg_init(argc - 1, argv + 1);
-  if (rc != 0)
-  {
-    return rc;
-  }
+     rc = parse_arg_init(argc - 1, argv + 1);
+     if (rc != 0) {
+         return rc;
+     }
 
-  if (argc > 1 && strcmp(argv[1], "cancel") == 0)
-  {
-    rc = btshell_conn_cancel();
-    if (rc != 0)
-    {
-      console_printf("connection cancel fail: %d\n", rc);
-      return rc;
-    }
+     if (argc > 1 && strcmp(argv[1], "cancel") == 0) {
+         rc = btshell_conn_cancel();
+         if (rc != 0) {
+             console_printf("connection cancel fail: %d\n", rc);
+             return rc;
+         }
 
-    return 0;
-  }
+         return 0;
+     }
 
-  ext = 0;
+     ext = parse_arg_kv_dflt("extended", cmd_ext_conn_phy_opts, 0, &rc);
+     if (rc != 0) {
+         console_printf("invalid 'extended' parameter\n");
+         return rc;
+     }
 
-  rc = parse_arg_find_idx("addr");
-  if (rc != -1)
-  {
-    rc = parse_dev_addr(NULL, cmd_addr_type, &peer_addr);
-    if (rc != 0)
-    {
-      console_printf("invalid 'addr' parameter\n");
-      return rc;
-    }
-  }
+     rc = parse_dev_addr("peer_", cmd_peer_addr_types, &peer_addr);
+     if (rc == ENOENT) {
+         /* With no "peer_addr" specified we'll use white list */
+         peer_addr_param = NULL;
+     } else if (rc != 0) {
+         console_printf("invalid 'peer_addr' parameter\n");
+         return rc;
+     }
 
-  // rc = parse_dev_addr("peer_", cmd_peer_addr_types, &peer_addr);
-  // if (rc == ENOENT) {
-  // 	/* With no "peer_addr" specified we'll use white list */
-  // 	peer_addr_param = NULL;
-  // }
-  // else if (rc != 0) {
-  // 	console_printf("invalid 'peer_addr' parameter\n");
-  // 	return rc;
-  // }
-  // CA:34:8B:54:7E:2B
-  // PUBLIC_DEV_ADDR
-  // NEED A WAY TO UPDATE THIS FROM THE syscfg.yml
-  // uint8_t dflt_addr[] = {0x2c, 0x7e, 0x54, 0x8b, 0x34, 0xca};
-  // peer_addr_param->type = BLE_ADDR_RANDOM;
-  // memcpy(peer_addr_param->val, dflt_addr, sizeof(dflt_addr));
+     own_addr_type = parse_arg_kv_dflt("own_addr_type", cmd_own_addr_types,
+                                       btshell_get_default_own_addr_type(), &rc);
+     if (rc != 0) {
+         console_printf("invalid 'own_addr_type' parameter\n");
+         return rc;
+     }
 
-  // #if MYNEWT_VAL(VICTIM_PRPH_ADDR)
-  // 	uint64_t dflt_addr = MYNEWT_VAL(VICTIM_PRPH_ADDR);
-  // 	// uint8_t dflt_addr[6] = {0x00, 0x00, 0xe0, 0xa4, 0x0c, 0xd1};
-  // 	peer_addr_param->type = 0;
+     duration_ms = parse_arg_long_bounds_dflt("duration", 1, INT32_MAX, 0, &rc);
+     if (rc != 0) {
+         console_printf("invalid 'duration' parameter\n");
+         return rc;
+     }
 
-  // 	for (int i = 0; i < BLE_DEV_ADDR_LEN; i++) {
-  // 		peer_addr_param->val[i] = dflt_addr & 0xff;
-  // 		dflt_addr >>= 8;
-  // 	}
-  // #else
-  // 	return 1;
-  // #endif
+     phy_1M_params.scan_itvl = parse_arg_time_dflt("scan_interval", 625, 0x0010, &rc);
+     if (rc != 0) {
+         console_printf("invalid 'scan_interval' parameter\n");
+         return rc;
+     }
 
-  own_addr_type = btshell_get_default_own_addr_type();
+     phy_1M_params.scan_window = parse_arg_time_dflt("scan_window", 625, 0x0010, &rc);
+     if (rc != 0) {
+         console_printf("invalid 'scan_window' parameter\n");
+         return rc;
+     }
 
-  duration_ms = 0;
+     phy_1M_params.itvl_min = parse_arg_time_dflt("interval_min", 1250,
+                                                    BLE_GAP_INITIAL_CONN_ITVL_MIN,
+                                                    &rc);
+     if (rc != 0) {
+         console_printf("invalid 'interval_min' parameter\n");
+         return rc;
+     }
 
-  phy_1M_params.scan_itvl = 0x0010;
-  phy_1M_params.scan_window = 0x0010;
-  phy_1M_params.itvl_min = BLE_GAP_INITIAL_CONN_ITVL_MIN;
-  phy_1M_params.itvl_max = BLE_GAP_INITIAL_CONN_ITVL_MAX;
-  phy_1M_params.latency = 0;
-  phy_1M_params.supervision_timeout = 0x0100;
-  phy_1M_params.min_ce_len = 0x0010;
-  phy_1M_params.max_ce_len = 0x0300;
+     phy_1M_params.itvl_max = parse_arg_time_dflt("interval_max", 1250,
+                                                    BLE_GAP_INITIAL_CONN_ITVL_MAX,
+                                                    &rc);
+     if (rc != 0) {
+         console_printf("invalid 'interval_max' parameter\n");
+         return rc;
+     }
 
-  if (ext == 0x00)
-  {
-    rc = btshell_conn_initiate(own_addr_type, &peer_addr, duration_ms,
-                               &phy_1M_params);
-    if (rc)
-    {
-      console_printf("error connecting; rc=%d\n", rc);
-    }
-    return rc;
-  }
+     phy_1M_params.latency = parse_arg_uint16_dflt("latency", 0, &rc);
+     if (rc != 0) {
+         console_printf("invalid 'latency' parameter\n");
+         return rc;
+     }
 
-  if (ext == 0x01)
-  {
-    rc = btshell_ext_conn_initiate(own_addr_type, &peer_addr, duration_ms,
-                                   &phy_1M_params, NULL, NULL);
-    if (rc)
-    {
-      console_printf("error connecting; rc=%d\n", rc);
-    }
-    return rc;
-  }
+     phy_1M_params.supervision_timeout = parse_arg_time_dflt("timeout", 10000,
+                                                               0x0100, &rc);
+     if (rc != 0) {
+         console_printf("invalid 'timeout' parameter\n");
+         return rc;
+     }
 
-  /* Get coded params */
-  phy_coded_params.scan_itvl =
-      parse_arg_time_dflt("coded_scan_interval", 625, 0x0010, &rc);
-  if (rc != 0)
-  {
-    console_printf("invalid 'coded_scan_interval' parameter\n");
-    return rc;
-  }
+     phy_1M_params.min_ce_len = parse_arg_time_dflt("min_conn_event_len", 625,
+                                                    0x0010, &rc);
+     if (rc != 0) {
+         console_printf("invalid 'min_conn_event_len' parameter\n");
+         return rc;
+     }
 
-  phy_coded_params.scan_window =
-      parse_arg_time_dflt("coded_scan_window", 625, 0x0010, &rc);
-  if (rc != 0)
-  {
-    console_printf("invalid 'coded_scan_window' parameter\n");
-    return rc;
-  }
+     phy_1M_params.max_ce_len = parse_arg_time_dflt("max_conn_event_len", 625,
+                                                    0x0300, &rc);
+     if (rc != 0) {
+         console_printf("invalid 'max_conn_event_len' parameter\n");
+         return rc;
+     }
 
-  phy_coded_params.itvl_min = parse_arg_time_dflt(
-      "coded_interval_min", 1250, BLE_GAP_INITIAL_CONN_ITVL_MIN, &rc);
-  if (rc != 0)
-  {
-    console_printf("invalid 'coded_interval_min' parameter\n");
-    return rc;
-  }
+     if (ext == 0x00) {
+         rc = btshell_conn_initiate(own_addr_type, peer_addr_param, duration_ms,
+                                    &phy_1M_params);
+         if (rc) {
+             console_printf("error connecting; rc=%d\n", rc);
+         }
+         return rc;
+     }
 
-  phy_coded_params.itvl_max = parse_arg_time_dflt(
-      "coded_interval_max", 1250, BLE_GAP_INITIAL_CONN_ITVL_MAX, &rc);
-  if (rc != 0)
-  {
-    console_printf("invalid 'coded_interval_max' parameter\n");
-    return rc;
-  }
+     if (ext == 0x01) {
+         rc = btshell_ext_conn_initiate(own_addr_type, peer_addr_param,
+                                        duration_ms, &phy_1M_params,
+                                        NULL, NULL);
+         if (rc) {
+             console_printf("error connecting; rc=%d\n", rc);
+         }
+         return rc;
+     }
 
-  phy_coded_params.latency = parse_arg_uint16_dflt("coded_latency", 0, &rc);
-  if (rc != 0)
-  {
-    console_printf("invalid 'coded_latency' parameter\n");
-    return rc;
-  }
+     /* Get coded params */
+     phy_coded_params.scan_itvl = parse_arg_time_dflt("coded_scan_interval",
+                                                      625, 0x0010, &rc);
+     if (rc != 0) {
+         console_printf("invalid 'coded_scan_interval' parameter\n");
+         return rc;
+     }
 
-  phy_coded_params.supervision_timeout =
-      parse_arg_time_dflt("coded_timeout", 10000, 0x0100, &rc);
+     phy_coded_params.scan_window = parse_arg_time_dflt("coded_scan_window",
+                                                        625, 0x0010, &rc);
+     if (rc != 0) {
+         console_printf("invalid 'coded_scan_window' parameter\n");
+         return rc;
+     }
 
-  if (rc != 0)
-  {
-    console_printf("invalid 'coded_timeout' parameter\n");
-    return rc;
-  }
+     phy_coded_params.itvl_min = parse_arg_time_dflt("coded_interval_min", 1250,
+                                                     BLE_GAP_INITIAL_CONN_ITVL_MIN,
+                                                     &rc);
+     if (rc != 0) {
+         console_printf("invalid 'coded_interval_min' parameter\n");
+         return rc;
+     }
 
-  phy_coded_params.min_ce_len =
-      parse_arg_time_dflt("coded_min_conn_event", 625, 0x0010, &rc);
-  if (rc != 0)
-  {
-    console_printf("invalid 'coded_min_conn_event' parameter\n");
-    return rc;
-  }
+     phy_coded_params.itvl_max = parse_arg_time_dflt("coded_interval_max", 1250,
+                                                     BLE_GAP_INITIAL_CONN_ITVL_MAX,
+                                                     &rc);
+     if (rc != 0) {
+         console_printf("invalid 'coded_interval_max' parameter\n");
+         return rc;
+     }
 
-  phy_coded_params.max_ce_len =
-      parse_arg_time_dflt("coded_max_conn_event", 625, 0x0300, &rc);
-  if (rc != 0)
-  {
-    console_printf("invalid 'coded_max_conn_event' parameter\n");
-    return rc;
-  }
+     phy_coded_params.latency =
+         parse_arg_uint16_dflt("coded_latency", 0, &rc);
+     if (rc != 0) {
+         console_printf("invalid 'coded_latency' parameter\n");
+         return rc;
+     }
 
-  /* Get 2M params */
-  phy_2M_params.itvl_min = parse_arg_time_dflt(
-      "2M_interval_min", 1250, BLE_GAP_INITIAL_CONN_ITVL_MIN, &rc);
-  if (rc != 0)
-  {
-    console_printf("invalid '2M_interval_min' parameter\n");
-    return rc;
-  }
+     phy_coded_params.supervision_timeout =
+         parse_arg_time_dflt("coded_timeout", 10000, 0x0100, &rc);
 
-  phy_2M_params.itvl_max = parse_arg_time_dflt(
-      "2M_interval_max", 1250, BLE_GAP_INITIAL_CONN_ITVL_MAX, &rc);
-  if (rc != 0)
-  {
-    console_printf("invalid '2M_interval_max' parameter\n");
-    return rc;
-  }
+     if (rc != 0) {
+         console_printf("invalid 'coded_timeout' parameter\n");
+         return rc;
+     }
 
-  phy_2M_params.latency = parse_arg_uint16_dflt("2M_latency", 0, &rc);
-  if (rc != 0)
-  {
-    console_printf("invalid '2M_latency' parameter\n");
-    return rc;
-  }
+     phy_coded_params.min_ce_len =
+         parse_arg_time_dflt("coded_min_conn_event", 625, 0x0010, &rc);
+     if (rc != 0) {
+         console_printf("invalid 'coded_min_conn_event' parameter\n");
+         return rc;
+     }
 
-  phy_2M_params.supervision_timeout =
-      parse_arg_time_dflt("2M_timeout", 10000, 0x0100, &rc);
+     phy_coded_params.max_ce_len = parse_arg_time_dflt("coded_max_conn_event",
+                                                       625, 0x0300, &rc);
+     if (rc != 0) {
+         console_printf("invalid 'coded_max_conn_event' parameter\n");
+         return rc;
+     }
 
-  if (rc != 0)
-  {
-    console_printf("invalid '2M_timeout' parameter\n");
-    return rc;
-  }
+     /* Get 2M params */
+     phy_2M_params.itvl_min = parse_arg_time_dflt("2M_interval_min", 1250,
+                                                  BLE_GAP_INITIAL_CONN_ITVL_MIN,
+                                                  &rc);
+     if (rc != 0) {
+         console_printf("invalid '2M_interval_min' parameter\n");
+         return rc;
+     }
 
-  phy_2M_params.min_ce_len =
-      parse_arg_time_dflt("2M_min_conn_event", 625, 0x0010, &rc);
-  if (rc != 0)
-  {
-    console_printf("invalid '2M_min_conn_event' parameter\n");
-    return rc;
-  }
+     phy_2M_params.itvl_max = parse_arg_time_dflt("2M_interval_max", 1250,
+                                                  BLE_GAP_INITIAL_CONN_ITVL_MAX, &rc);
+     if (rc != 0) {
+         console_printf("invalid '2M_interval_max' parameter\n");
+         return rc;
+     }
 
-  phy_2M_params.max_ce_len =
-      parse_arg_time_dflt("2M_max_conn_event", 625, 0x0300, &rc);
-  if (rc != 0)
-  {
-    console_printf("invalid '2M_max_conn_event' parameter\n");
-    return rc;
-  }
+     phy_2M_params.latency =
+         parse_arg_uint16_dflt("2M_latency", 0, &rc);
+     if (rc != 0) {
+         console_printf("invalid '2M_latency' parameter\n");
+         return rc;
+     }
 
-  if (ext == 0x02)
-  {
-    rc = btshell_ext_conn_initiate(own_addr_type, &peer_addr, duration_ms, NULL,
-                                   NULL, &phy_coded_params);
-    return rc;
-  }
+     phy_2M_params.supervision_timeout = parse_arg_time_dflt("2M_timeout", 10000,
+                                                             0x0100, &rc);
 
-  if (ext == 0x03)
-  {
-    rc = btshell_ext_conn_initiate(own_addr_type, &peer_addr, duration_ms,
-                                   &phy_1M_params, NULL, &phy_coded_params);
-    return rc;
-  }
+     if (rc != 0) {
+         console_printf("invalid '2M_timeout' parameter\n");
+         return rc;
+     }
 
-  rc = btshell_ext_conn_initiate(own_addr_type, &peer_addr, duration_ms,
-                                 &phy_1M_params, &phy_2M_params,
-                                 &phy_coded_params);
-  return rc;
-}
+     phy_2M_params.min_ce_len = parse_arg_time_dflt("2M_min_conn_event", 625,
+                                                    0x0010, &rc);
+     if (rc != 0) {
+         console_printf("invalid '2M_min_conn_event' parameter\n");
+         return rc;
+     }
 
-#if MYNEWT_VAL(SHELL_CMD_HELP)
-static const struct shell_param connect_params[] = {
-    {"cancel", "cancel connection procedure"},
-    {"extended", "usage: =[none|1M|coded|both|all], default: none"},
-    {"peer_addr_type",
-     "usage: =[public|random|public_id|random_id], default: public"},
-    {"addr", "usage: =[XX:XX:XX:XX:XX:XX]"},
-    {"own_addr_type",
-     "usage: =[public|random|rpa_pub|rpa_rnd], default: public if available, "
-     "otherwise random"},
-    {"duration", "usage: =[1-INT32_MAX], default: 0"},
-    {"scan_interval", "usage: =[0-UINT16_MAX], default: 0x0010"},
-    {"scan_window", "usage: =[0-UINT16_MAX], default: 0x0010"},
-    {"interval_min", "usage: =[0-UINT16_MAX], default: 30"},
-    {"interval_max", "usage: =[0-UINT16_MAX], default: 50"},
-    {"latency", "usage: =[UINT16], default: 0"},
-    {"timeout", "usage: =[UINT16], default: 0x0100"},
-    {"min_conn_event_len", "usage: =[UINT16], default: 0x0010"},
-    {"max_conn_event_len", "usage: =[UINT16], default: 0x0300"},
-    {"coded_scan_interval", "usage: =[0-UINT16_MAX], default: 0x0010"},
-    {"coded_scan_window", "usage: =[0-UINT16_MAX], default: 0x0010"},
-    {"coded_interval_min", "usage: =[0-UINT16_MAX], default: 30"},
-    {"coded_interval_max", "usage: =[0-UINT16_MAX], default: 50"},
-    {"coded_latency", "usage: =[UINT16], default: 0"},
-    {"coded_timeout", "usage: =[UINT16], default: 0x0100"},
-    {"coded_min_conn_event_len", "usage: =[UINT16], default: 0x0010"},
-    {"coded_max_conn_event_len", "usage: =[UINT16], default: 0x0300"},
-    {"2M_interval_min", "usage: =[0-UINT16_MAX], default: 30"},
-    {"2M_interval_max", "usage: =[0-UINT16_MAX], default: 50"},
-    {"2M_latency", "usage: =[UINT16], default: 0"},
-    {"2M_timeout", "usage: =[UINT16], default: 0x0100"},
-    {"2M_min_conn_event_len", "usage: =[UINT16], default: 0x0010"},
-    {"2M_max_conn_event_len", "usage: =[UINT16], default: 0x0300"},
-    {NULL, NULL}};
+     phy_2M_params.max_ce_len = parse_arg_time_dflt("2M_max_conn_event", 625,
+                                                    0x0300, &rc);
+     if (rc != 0) {
+         console_printf("invalid '2M_max_conn_event' parameter\n");
+         return rc;
+     }
 
-static const struct shell_cmd_help connect_help = {
-    .summary = "start/stop connection procedure with specific parameters",
-    .usage = NULL,
-    .params = connect_params,
-};
-#endif
+     if (ext == 0x02) {
+         rc = btshell_ext_conn_initiate(own_addr_type, peer_addr_param,
+                                        duration_ms, NULL, NULL, &phy_coded_params);
+         return rc;
+     }
+
+     if (ext == 0x03) {
+         rc = btshell_ext_conn_initiate(own_addr_type, peer_addr_param,
+                                        duration_ms, &phy_1M_params, NULL,
+                                        &phy_coded_params);
+         return rc;
+     }
+
+     rc = btshell_ext_conn_initiate(own_addr_type, peer_addr_param,
+                                    duration_ms, &phy_1M_params,
+                                    &phy_2M_params,
+                                    &phy_coded_params);
+     return rc;
+ }
+
+ #if MYNEWT_VAL(SHELL_CMD_HELP)
+ static const struct shell_param connect_params[] = {
+     {"cancel", "cancel connection procedure"},
+     {"extended", "usage: =[none|1M|coded|both|all], default: none"},
+     {"peer_addr_type", "usage: =[public|random|public_id|random_id], default: public"},
+     {"peer_addr", "usage: =[XX:XX:XX:XX:XX:XX]"},
+     {"own_addr_type", "usage: =[public|random|rpa_pub|rpa_rnd], default: public if available, otherwise random"},
+     {"duration", "usage: =[1-INT32_MAX], default: 0"},
+     {"scan_interval", "usage: =[0-UINT16_MAX], default: 0x0010"},
+     {"scan_window", "usage: =[0-UINT16_MAX], default: 0x0010"},
+     {"interval_min", "usage: =[0-UINT16_MAX], default: 30"},
+     {"interval_max", "usage: =[0-UINT16_MAX], default: 50"},
+     {"latency", "usage: =[UINT16], default: 0"},
+     {"timeout", "usage: =[UINT16], default: 0x0100"},
+     {"min_conn_event_len", "usage: =[UINT16], default: 0x0010"},
+     {"max_conn_event_len", "usage: =[UINT16], default: 0x0300"},
+     {"coded_scan_interval", "usage: =[0-UINT16_MAX], default: 0x0010"},
+     {"coded_scan_window", "usage: =[0-UINT16_MAX], default: 0x0010"},
+     {"coded_interval_min", "usage: =[0-UINT16_MAX], default: 30"},
+     {"coded_interval_max", "usage: =[0-UINT16_MAX], default: 50"},
+     {"coded_latency", "usage: =[UINT16], default: 0"},
+     {"coded_timeout", "usage: =[UINT16], default: 0x0100"},
+     {"coded_min_conn_event_len", "usage: =[UINT16], default: 0x0010"},
+     {"coded_max_conn_event_len", "usage: =[UINT16], default: 0x0300"},
+     {"2M_interval_min", "usage: =[0-UINT16_MAX], default: 30"},
+     {"2M_interval_max", "usage: =[0-UINT16_MAX], default: 50"},
+     {"2M_latency", "usage: =[UINT16], default: 0"},
+     {"2M_timeout", "usage: =[UINT16], default: 0x0100"},
+     {"2M_min_conn_event_len", "usage: =[UINT16], default: 0x0010"},
+     {"2M_max_conn_event_len", "usage: =[UINT16], default: 0x0300"},
+     {NULL, NULL}
+ };
+
+ static const struct shell_cmd_help connect_help = {
+     .summary = "start/stop connection procedure with specific parameters",
+     .usage = NULL,
+     .params = connect_params,
+ };
+ #endif
 
 /*****************************************************************************
  * $disconnect                                                               *
