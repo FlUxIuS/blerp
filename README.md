@@ -13,7 +13,7 @@ The artifact will also be available at [doi.org/10.5281/zenodo.17671927](https:/
 **Software:**
 
   * Ubuntu 22.04+ or Fedora 40+
-  * [Arm GNU Toolchain 13.3.1](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads/13-3-rel1)
+  * [Arm GNU Toolchain 13.3.Rel1](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads) (arm-none-eabi)
   * [Segger JLink V7.98h+](https://www.segger.com/downloads/jlink/)
   * [Apache newt v1.13.0](https://mynewt.apache.org)
   * Python 3.12+ (MitM attack only)
