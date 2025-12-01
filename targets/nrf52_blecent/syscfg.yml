@@ -1,0 +1,2 @@
+syscfg.defs:
+  ENABLE_BLERP_CMDS: 1

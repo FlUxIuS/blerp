@@ -3185,6 +3185,7 @@ static int cmd_security_set_fake_authreq(int argc, char **argv)
   {
     return rc;
   }
+#if MYNEWT_VAL(ENABLE_BLERP_CMDS)
 
   val = parse_arg_bool_dflt("mitm", 1, &rc);
   if (rc == 0)
@@ -3209,7 +3210,7 @@ static int cmd_security_set_fake_authreq(int argc, char **argv)
   {
     fake_sec_cfg.sm_keypress = val;
   }
-
+#endif
   return 0;
 }
 
@@ -3337,7 +3338,7 @@ static int cmd_set_repairing_flag_val(int argc, char **argv)
   {
     return rc;
   }
-
+#if MYNEWT_VAL(ENABLE_BLERP_CMDS)
   uint8_t val = parse_arg_uint8_dflt("val", 1, &rc);
   if (rc == 0)
   {
@@ -3348,6 +3349,7 @@ static int cmd_set_repairing_flag_val(int argc, char **argv)
         BLE_HCI_OP(BLE_HCI_OGF_LE, BLE_HCI_OCF_LE_CUSTOM_CMD), &cmd,
         sizeof(cmd), NULL, 0);
   }
+#endif
 
   return 0;
 }
@@ -3454,7 +3456,9 @@ static int cmd_security_set_data(int argc, char **argv)
   if (rc == 0)
   {
     good++;
+#if MYNEWT_VAL(ENABLE_BLERP_CMDS)
     ble_hs_cfg.sm_max_enc_key_size = tmp;
+#endif
   }
   else if (rc != ENOENT)
   {
