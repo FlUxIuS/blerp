@@ -42,15 +42,16 @@ class Mitm:
         peripheral_addr_type=1,
         central_addr=None,
         central_addr_type=0,
+        devids = [0,1]
     ):
         self.peripheral = Device(
-            id=1,
+            id=devids[0],
             role=BLE_ROLE_PERIPHERAL,
             addr=peripheral_addr,
             addr_type=peripheral_addr_type,
         )
         self.central = Device(
-            id=2, role=BLE_ROLE_CENTRAL, addr=central_addr, addr_type=central_addr_type
+            id=devids[1], role=BLE_ROLE_CENTRAL, addr=central_addr, addr_type=central_addr_type
         )
 
         self.waiting_msg_from = None
@@ -210,13 +211,23 @@ if __name__ == "__main__":
         required=True,
         help="Peripheral device name",
     )
+    parser.add_argument(
+        "--dev-ids",
+        type=str,
+        default="0,1",
+        help="Comma-separated HCI device IDs, e.g., 0,1",
+    )
     args = parser.parse_args()
 
     addr_type_map = {"public": 0, "random": 1}
 
+    # Parse device IDs from comma-separated string to list of integers
+    dev_ids = [int(x.strip()) for x in args.dev_ids.split(",")]
+
     mitm = Mitm(
         central_addr=args.central_addr,
         central_addr_type=addr_type_map[args.central_addr_type],
+        devids=dev_ids
     )
 
     # Enable or disable packets passthru

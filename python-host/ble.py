@@ -372,7 +372,7 @@ def signal_handler(sig, frame):
 
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
-    dev = Device(id=1, role=BLE_ROLE_CENTRAL, addr="50:ED:3C:00:BC:BA", addr_type=0)
+    dev = Device(id=1, role=BLE_ROLE_CENTRAL, addr="AA:BB:CC:DD:EE:FF", addr_type=0)
 
     dev.initialize()
 
@@ -380,7 +380,7 @@ if __name__ == "__main__":
 
     # dev.set_peripheral_mode(addr=addr, addr_type=addr_type, adv_data=data)
 
-    # dev.sm.set_peer_address(target, 0)  # "CA:34:8B:54:7E:52"
+    # dev.sm.set_peer_address(target, 0)
     # dev.set_peripheral_mode(addr=addr, addr_type=addr_type, adv_data=data)
     dev.connect(bdaddr=addr, addr_type=addr_type)
     dev.sm.pair(dev.sock, dev.handle)
@@ -390,7 +390,7 @@ if __name__ == "__main__":
     # dev.connect(bdaddr=addr, addr_type=atype)
     # dev.start_pairing()
 
-    # dev = Device(id=1, role=BLE_ROLE_PERIPHERAL, addr="CA:34:8B:54:7E:52", addr_type=1)
+    # dev = Device(id=1, role=BLE_ROLE_PERIPHERAL, addr="AA:BB:CC:DD:EE:FF", addr_type=1)
     # dev.set_peripheral_mode()
 
     input("Press Enter to start scanning...")

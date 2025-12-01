@@ -131,7 +131,7 @@ encrypted=1, authenticated=0, bonded=1
 
 1. Pair the target Peripheral with the legitimate Central, then turn off the legitimate Central (e.g., disable Bluetooth from settings).
 2. Configure the board to spoof the Central using the same commands as before. Note that Centrals typically use a public address.
-3. Issue the _connect_ command with the correct parameters. This will connect and start the attack.
+3. Issue _advertise_ on the Peripheral and then _connect_ from the Central with the correct parameters. The two devices will connect and the attack will start.
 
 If successful, the log will show the same message as the Peripheral attack. The legitimate Central, once turned back on, will no longer be able to control the Peripheral.
 
@@ -166,8 +166,9 @@ Apply the patch, re-flash the firmware on one of the nRF52, and repeat the attac
 ```bash
 ./apply_fixes_patch.sh
 make erase id=0123456789
-make central id=0123456789
+make boot-10056 id=0123456789 && make bleshell id=0123456789
 ``` 
+
 Expected outputs: disconnection and re-pairing failure for both attacks.
 
 ## Verifying Authenticated Re-pairing
