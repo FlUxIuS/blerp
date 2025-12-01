@@ -123,7 +123,7 @@ If successful, the logs should be similar to the previous one, with a partially 
 
 ## Real-World Device Testing
 
-> Execution Time: 10 minutes (highly affected by the time needed to find the parameters for spoofing)
+> Expected Time: 10 minutes (highly affected by the time needed to find the parameters for spoofing)
 
 The commands are the same as those used in the controlled environment testing section, although the parameters are different and device-specific. 
 
