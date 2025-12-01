@@ -137,7 +137,7 @@ If successful, the log will show the same message as the Peripheral attack. The 
 
 ## Double-Channel MitM
 
-The attack requires two nRF52 boards connected to a computer acting as a single attacker to intercept and redirect traffic between two paired victim devices (e.g., a real phone and a real mouse).
+The attack requires two nRF52 boards connected to a computer acting as a single attacker to intercept and redirect traffic between two paired victim devices (e.g., a real phone and a real mouse). The boards must be connected via the micro USB port on the longer side.
 
 1. Flash the specific MitM firmware onto both nRF52 boards. A clean install is recommended if coming from the previous tests. For each board, run the following command, replacing `id` with the board's serial number.
 ```sh
