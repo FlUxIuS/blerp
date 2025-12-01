@@ -4,13 +4,13 @@ This repository contains the attacks PoCs as described in the paper [BLERP: BLE 
 
 The artifact will also be available at [doi.org/10.5281/zenodo.17671927](https://doi.org/10.5281/zenodo.17671927)
 
-## Requirements {#reqs}
+## Requirements
 
 **Hardware:**
   * 2 Nordic nRF52840-DK (PCA10056)
   * Additional BLE devices to test (no BLE Audio)
   
-Note: two nRF52 are sufficient to test the attacks in a controlled scenario as described [here](#test-controlled).
+> Note: two nRF52s are enough to test the attacks in a "controlled scenario" where one board acts first as a legitimate device and then as the attacker.
 
 **Software:**
 
@@ -22,7 +22,7 @@ Note: two nRF52 are sufficient to test the attacks in a controlled scenario as d
   * A serial device tool (e.g., [tio](https://github.com/tio/tio))
 
 
-## Toolkit Setup {#setup}
+## Toolkit Setup
 
 > Expected Time: 5-10 minutes
 
@@ -51,13 +51,13 @@ tio /dev/serial/by-id/usb-SEGGER_J-Link_00XXXXXXXXXX-if00
 Once connected, pressing Tab will show the list of available commands.
 
 
-## Testing In a Controlled Environment {#test-controlled}
+## Testing In a Controlled Environment
 
 > Expected Time: 3 minutes
 
 Test the impersonation attacks on the NimBLE stack using only two nRF52 boards. The firmware resets on power loss (erasing the keys), enabling one board to act first as a legitimate device and then as the attacker.
 
-### Initial Setup {#testbed-setup}
+### Initial Setup
 
 > Expected Time: 1 minute
 
@@ -78,7 +78,7 @@ encryption change event; status=0
 encrypted=1, authenticated=0, bonded=1
 ```
 
-### Peripheral Impersonation {#pi-testbed}
+### Peripheral Impersonation
 
 > Expected Time: 1 minute
 
@@ -103,11 +103,11 @@ encryption change event; status=0
 encrypted=1, authenticated=0, bonded=1
 ```
 
-### Central Impersonation {#ci-testbed}
+### Central Impersonation
 
 > Expected Time: 1 minute
 
-If proceeding immediately after the Peripheral Impersonation attack, you must reset both boards and repeat the [Initial Setup](#testbed-setup) phase before starting. The board that was previously the Central will now act as the attacker. Power cycle the Central, then enter the following commands to configure it for the attack:
+If proceeding immediately after the Peripheral Impersonation attack, you must reset both boards and repeat the steps from the initial setup phase before starting. The board that was previously the Central will now act as the attacker. Power cycle the Central, then enter the following commands to configure it for the attack:
 ```sh
 # Spoof the Legitimate Central's Address
 spoof-address addr=00:1A:79:FF:EE:DD addr_type=public
@@ -121,16 +121,18 @@ connect peer_addr=F8:4C:6D:E9:7A:B1 peer_addr_type=random own_addr_type=public
 ```
 If successful, the logs should be similar to the previous one, with a partially zeroed-out LTK and no errors (i.e., status=0).
 
-## Real-World Device Testing {#real-world-testing}
+## Real-World Device Testing
 
-Commands and expected execution times are identical to the [Controlled Environment Testing](#test-controlled), but the parameters are device-specific.
+> Execution Time: 10 minutes (highly affected by the time needed to find the parameters for spoofing)
 
-### Peripheral Impersonation {#pi-real}
+The commands are the same as those used in the controlled environment testing section, although the parameters are different and device-specific. 
+
+### Peripheral Impersonation
 
 1. Pair a Peripheral (e.g., a BLE mouse) with the victim Central. Once paired, turn off the Peripheral or move it out of range.
 2. Configure the board to spoof the legitimate Peripheral. The address can be recovered from the Central's list of paired devices. The address type and device appearance must also match the actual one (e.g., 962 for mice, 961 for keyboards, or [others](https://www.bluetooth.com/specifications/assigned-numbers/)).
 
-3. The commands are the same as those used in [Controlled Environment Testing](#test-controlled), although the parameters are different, so we will not repeat them. The attack will start as soon as the _advertise_ command is issued, as the victim Central will attempt to auto-reconnect to the Peripheral.
+3. The attack will start as soon as the _advertise_ command is issued, as the victim Central will attempt to auto-reconnect to the Peripheral.
 
 The attack is successful if the Peripheral logs report completed events with status=0, indicating success. The legitimate Peripheral should no longer work with the Central even when turned back on.
 ```bash
@@ -139,7 +141,7 @@ encryption change event; status=0
 encrypted=1, authenticated=0, bonded=1
 ```
 
-### Central Impersonation {#ci-real}
+### Central Impersonation
 
 1. Pair the target Peripheral with the legitimate Central, then turn off the legitimate Central (e.g., disable Bluetooth from settings).
 2. Configure the board to spoof the Central using the same commands as before. Note that Centrals typically use a public address.
@@ -147,7 +149,7 @@ encrypted=1, authenticated=0, bonded=1
 
 If successful, the log will show the same message as the Peripheral attack. The legitimate Central, once turned back on, will no longer be able to control the Peripheral.
 
-## Double-Channel MitM {#test-mitm}
+## Double-Channel MitM
 
 > Expected Time: 2 minutes
 
@@ -196,9 +198,9 @@ Pairing Request: SM_Hdr / SM_Pairing_Request
 [11:44:17] Central: Encryption enabled
 ```
 
-## Testing Hardened Re-pairing {#fix-1}
+## Testing Hardened Re-pairing
 
-Apply the patch, re-flash the firmware on one of the nRF52, and repeat the attacks from the [Controlled Environment Testing](#test-controlled).
+Apply the patch, re-flash the firmware on one of the nRF52, and repeat the attacks from the controlled environment testing.
 ```bash
 ./apply_fixes_patch.sh
 make erase id=XXXXXXXXXX
