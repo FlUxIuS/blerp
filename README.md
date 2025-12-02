@@ -15,11 +15,17 @@ The artifact will also be available at [doi.org/10.5281/zenodo.17671927](https:/
 **Software:**
 
   * Ubuntu 22.04+ or Fedora 40+
-  * [Arm GNU Toolchain 13.3.Rel1](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads) (arm-none-eabi)
+  * [Arm GNU Toolchain 14.3.Rel1](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads) (arm-none-eabi)
   * [Segger JLink V7.98h+](https://www.segger.com/downloads/jlink/)
   * [Apache newt v1.13.0](https://mynewt.apache.org)
   * Python 3.12+ (MitM attack only)
   * A serial device tool (e.g., [tio](https://github.com/tio/tio))
+
+> Optional [pre-configured Docker Image](https://mega.nz/file/gFgWwQRI#MG3j7-RZQhSa_X6vHkWsDvhzKCuRotE7CfWKnspqNLA). Download and load it with `docker load -i blerp.tar.gz`. Then run it with
+
+```bash
+docker run -it --user blerp -w /home/blerp/blerp --privileged --name blerp-test --net host -v /dev:/dev -v /var/run/dbus:/var/run/dbus blerp:1.0 bash
+```
 
 
 ## Toolkit Setup
@@ -162,7 +168,7 @@ make hci-dev id=XXXXXXXXXX
 ```
 2. Run the Python script with root privileges. You must provide the victim's Central address and the victim's Peripheral name.
 ```sh
-sudo .venv/bin/python python-host/mitm.py --central-addr XX:XX:XX:XX:XX:XX --central-addr-type public --peripheral-name "Peripheral Name"
+sudo .venv/bin/python python-host/mitm.py --central-addr XX:XX:XX:XX:XX:XX --central-addr-type public --peripheral-name "Peripheral Name" --dev--ids X,Y
 ```
 
 Now, disconnect the two legitimate devices by turning the Central's Bluetooth off. Once this is done, the script will:
