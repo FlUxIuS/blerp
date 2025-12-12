@@ -4,19 +4,18 @@ from typing import final
 from scapy.layers.bluetooth import *
 from scapy.layers.bluetooth4LE import *
 
+# def send_cmd(sock: BluetoothUserSocket, cmd: Packet):
+#     pkt = HCI_Hdr() / HCI_Command_Hdr() / cmd
+#     # opcode = pkt.opcode
 
-def send_cmd(sock: BluetoothUserSocket, cmd: Packet):
-    pkt = HCI_Hdr() / HCI_Command_Hdr() / cmd
-    # opcode = pkt.opcode
-
-    sock.send(pkt)
-    while True:
-        r = sock.recv()
-        if r.type == 0x04 and r.code in (0xE, 0x0F):  # and r.opcode == opcode:
-            if r.status != 0:
-                logging.warning(f"Command failed {cmd}")
-                return False
-            return r
+#     sock.send(pkt)
+#     while True:
+#         r = sock.recv()
+#         if r.type == 0x04 and r.code in (0xE, 0x0F):  # and r.opcode == opcode:
+#             if r.status != 0:
+#                 logging.warning(f"Command failed {cmd}")
+#                 return False
+#             return r
 
 
 # def on_message_rx(dev: Device, sock: BluetoothUserSocket, cmd: Packet):
@@ -39,18 +38,25 @@ def send_cmd(sock: BluetoothUserSocket, cmd: Packet):
 #     return False
 
 
-def wait_event(sock: BluetoothUserSocket, evt: Packet):
-    status = 0
+def wait_event(sock: BluetoothUserSocket, evt):
+    """
+    Wait for one or more events.
+
+    Args:
+        sock: BluetoothUserSocket to receive from
+        evt: Either a single Packet type or a list of Packet types to wait for
+
+    Returns:
+        The received packet if successful, None if status indicates failure
+    """
+    # Convert single event to list for uniform handling
+    events = evt if isinstance(evt, list) else [evt]
     while True:
         pkt = sock.recv()
-        if HCI_Event_Hdr in pkt and evt in pkt:
-
-            try:
-                status = pkt.status
-            except:
-                status = 0
-            finally:
-                if status == 0:
-                    return pkt
-                else:
-                    return None
+        if HCI_Event_Hdr not in pkt:
+            continue
+            # Check if any of the expected events are in the packet
+        for event in events:
+            if event in pkt:
+                status = getattr(pkt, "status", 0)
+                return pkt if status == 0 else None

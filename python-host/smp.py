@@ -74,22 +74,22 @@ class SecurityManager:
         l2cap_send(sock, handle, cmd=SM_Hdr() / pkt, cid=BLE_L2CAP_CID_SM)
 
     def pair(self, sock: BluetoothUserSocket, handle: int):
-        fake_authreq_temp = self.bond << 0 | 1 << 2 | 1 << 3 | self.keypress << 4
         if self.role == BLE_ROLE_CENTRAL:
             # self.start_time = datetime.datetime.now()
             # logging.info("Starting pairing")
             pkt = SM_Pairing_Request(
-                authentication=fake_authreq_temp,
+                authentication=self.authreq,
+                max_key_size=self.ltk_size,
                 initiator_key_distribution=0x01,
                 responder_key_distribution=0x01,
             )
-            self.preq = SM_Hdr(sm_command=0x01) / pkt
+            # self.preq = SM_Hdr(sm_command=0x01) / pkt
+            self.preq = SM_Hdr() / pkt
             self.send(sock, handle, pkt)
             print(f"Pairing request: {self.preq.summary()}")
         else:
-            self.send(
-                sock, handle, SM_Security_Request(authentication=fake_authreq_temp)
-            )
+            fake_authreq_temp = self.bond << 0 | 1 << 2 | 1 << 3 | self.keypress << 4
+            self.send(sock, handle, SM_Security_Request(auth_req=fake_authreq_temp))
 
     def set_own_address(self, addr: str, address_type: int):
         addr = addr.replace(":", "")
@@ -142,10 +142,11 @@ class SecurityManager:
             self.preq = pkt.getlayer(SM_Hdr)
             pair_rsp = SM_Pairing_Response(
                 authentication=self.authreq,
+                max_key_size=self.ltk_size,
                 initiator_key_distribution=0x01,
                 responder_key_distribution=0x01,
             )
-            self.pres = SM_Hdr(sm_command=0x02) / pair_rsp
+            self.pres = SM_Hdr() / pair_rsp
             self.send(sock, handle, pair_rsp)
 
     def on_pairing_response(self, sock: BluetoothUserSocket, handle: int, pkt: Packet):
@@ -157,6 +158,7 @@ class SecurityManager:
         if self.sc:
             rsp = SM_Public_Key(key_x=self.ecc_key.x[::-1], key_y=self.ecc_key.y[::-1])
         else:
+            self.r = crypto.r()
             rsp = self.make_pairing_confirm()
             # logging.info("Sending pairing confirm")
 
@@ -182,7 +184,6 @@ class SecurityManager:
             self.send(sock, handle, self.make_pairing_confirm())
 
     def make_pairing_confirm(self):
-        self.r = crypto.r()
         if self.sc:
             z = 0  # JW only for now
             if self.role == BLE_ROLE_CENTRAL:
@@ -195,14 +196,14 @@ class SecurityManager:
                 )  # pkb, pka, r, z
         else:
             self.tk = bytes(16)
-            logging.debug(f"TK: {self.tk.hex()}")
-            logging.debug(f"r: {self.r.hex()}")
-            logging.debug(f"Preq: {bytes(self.preq).hex()}")
-            logging.debug(f"Pres: {bytes(self.pres).hex()}")
-            logging.debug(f"iat: {self.iat}")
-            logging.debug(f"rat: {self.rat}")
-            logging.debug(f"ia: {self.ia.hex()}")
-            logging.debug(f"ra: {self.ra.hex()}")
+            logging.info(f"TK: {self.tk.hex()}")
+            logging.info(f"r: {self.r.hex()}")
+            logging.info(f"Preq: {bytes(self.preq).hex()}")
+            logging.info(f"Pres: {bytes(self.pres).hex()}")
+            logging.info(f"iat: {self.iat}")
+            logging.info(f"rat: {self.rat}")
+            logging.info(f"ia: {self.ia.hex()}")
+            logging.info(f"ra: {self.ra.hex()}")
 
             confirm_value = crypto.c1(
                 self.tk,
@@ -218,27 +219,37 @@ class SecurityManager:
 
     def on_pairing_confirm(self, sock: BluetoothUserSocket, handle: int, pkt: Packet):
         self.confirm_value = pkt.confirm
+        if self.r is None:
+            self.r = crypto.r()
 
-        if self.sc:
-            if self.role == BLE_ROLE_CENTRAL:
-                assert self.r is not None
-                self.send(sock, handle, SM_Random(random=self.r))
-        else:
-            if self.role == BLE_ROLE_CENTRAL:
-                assert self.r is not None
-                self.send(sock, handle, SM_Random(random=self.r))
-                # logging.info("Sending pairing random")
-            else:
-                self.send(
-                    sock,
-                    handle,
-                    self.make_pairing_confirm(),
-                )
+        if self.role == BLE_ROLE_PERIPHERAL and not self.sc:
+            self.send(
+                sock,
+                handle,
+                self.make_pairing_confirm(),
+            )
+
+        if self.role == BLE_ROLE_CENTRAL:
+            self.send(sock, handle, SM_Random(random=self.r))
+
+        # if self.sc:
+        #     if self.role == BLE_ROLE_CENTRAL:
+        #         self.send(sock, handle, SM_Random(random=self.r))
+        # else:
+        #     if self.role == BLE_ROLE_CENTRAL:
+        #         self.send(sock, handle, SM_Random(random=self.r))
+        #         # logging.info("Sending pairing random")
+        #     else:
+        #         self.send(
+        #             sock,
+        #             handle,
+        #             self.make_pairing_confirm(),
+        #         )
 
     # def make_pairing_random(self):
     #     return SM_Random(random=self.r)
 
-    def on_pairing_random_legacy(self, sock, handle, pkt):
+    def on_pairing_random_legacy(self, sock: BluetoothUserSocket, handle, pkt):
         logging.debug(f"TK: {self.tk.hex()}")
         logging.debug(f"r: {self.r.hex()}")
         logging.debug(f"Preq: {bytes(self.preq).hex()}")
@@ -278,11 +289,16 @@ class SecurityManager:
 
         self.ltk = crypto.r()
         # logging.info(f"LTK: {self.ltk.hex()}")
+        #
+        if self.ltk_size < 16:
+            self.ltk = self.ltk[: self.ltk_size] + bytes(16 - self.ltk_size)
+            self.stk = self.stk[: self.ltk_size] + bytes(16 - self.ltk_size)
 
         if self.role == BLE_ROLE_CENTRAL:
-            HCI.send_cmd(
-                sock,
-                HCI_Cmd_LE_Enable_Encryption(
+            sock.send_command(
+                HCI_Hdr()
+                / HCI_Command_Hdr()
+                / HCI_Cmd_LE_Enable_Encryption(
                     handle=handle,
                     ltk=self.stk,
                 ),
@@ -376,9 +392,10 @@ class SecurityManager:
 
         if self.role == BLE_ROLE_CENTRAL:
             # Central starts encryption
-            HCI.send_cmd(
-                sock,
-                HCI_Cmd_LE_Enable_Encryption(
+            sock.send_command(
+                HCI_Hdr()
+                / HCI_Command_Hdr()
+                / HCI_Cmd_LE_Enable_Encryption(
                     handle=handle,
                     ltk=self.ltk,
                 ),
@@ -389,8 +406,11 @@ class SecurityManager:
             self.send(sock, handle, SM_DHKey_Check(dhkey_check=self.eb))
             cmd = HCI.wait_event(sock, HCI_LE_Meta_Long_Term_Key_Request)
             assert self.ltk is not None
-            HCI.send_cmd(
-                sock,
-                HCI_Cmd_LE_Long_Term_Key_Request_Reply(handle=cmd.handle, ltk=self.ltk),
+            sock.send_command(
+                HCI_Hdr()
+                / HCI_Command_Hdr()
+                / HCI_Cmd_LE_Long_Term_Key_Request_Reply(
+                    handle=cmd.handle, ltk=self.ltk
+                ),
             )
             # logging.info("Pairing complete")
