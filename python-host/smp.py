@@ -116,7 +116,7 @@ class SecurityManager:
             logging.info("Received Pairing Response")
             self.on_pairing_response(sock, handle, pkt)
         elif SM_Public_Key in pkt:
-            logging.debug("Received Public Key")
+            logging.info("Received Public Key")
             self.on_public_key(sock, handle, pkt)
         elif SM_Confirm in pkt:
             logging.info("Received Confirm")
@@ -150,7 +150,9 @@ class SecurityManager:
         self.send(sock, handle, pair_rsp)
 
         (bond, mitm, sc, keypress) = decode_authreq(pkt.authentication)
-        # TODO: if remote does not support SC, we have to disable otherwise we will fail
+        # If remote is LSC, we adapt
+        if sc == 0:
+            self.sc = 0
 
     def on_pairing_response(self, sock: BluetoothSocket, handle: int, pkt: Packet):
         if self.role != BLE_ROLE_CENTRAL:
@@ -159,6 +161,10 @@ class SecurityManager:
         self.pres = pkt.getlayer(SM_Hdr)
 
         (bond, mitm, sc, keypress) = decode_authreq(pkt.authentication)
+        assert self.sc == sc
+        # If remote is LSC, we adapt
+        if sc == 0:
+            self.sc = 0
 
         if self.sc:
             rsp = SM_Public_Key(key_x=self.ecc_key.x[::-1], key_y=self.ecc_key.y[::-1])
@@ -227,6 +233,12 @@ class SecurityManager:
         return SM_Confirm(confirm=confirm_value)
 
     def on_pairing_confirm(self, sock: BluetoothSocket, handle: int, pkt: Packet):
+
+        if self.sc and self.peer_public_key_x == bytes(32):
+            logging.error("Received Confirm in SC mode without peer public key - possible downgrade attack")
+            self.send(sock, handle, SM_Failed(reason=0x05))  # Pairing Not Supported
+            return
+
         self.confirm_value = pkt.confirm
         if self.r is None:
             self.r = crypto.r()

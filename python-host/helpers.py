@@ -540,23 +540,10 @@ def l2cap_fragment_reassemble(
     return b"", 0, pkt
 
 def decode_authreq(auth_value):
-    # Extract bond (Bit 0)
-    # Mask is 1 (binary 0b00001)
     bond = (auth_value & 0b00001) >> 0
-
-    # Extract mitm (Bit 2)
-    # Mask is 4 (binary 0b00100)
     mitm = (auth_value & 0b00100) >> 2
-
-    # Extract sc (Bit 3)
-    # Mask is 8 (binary 0b01000)
     sc = (auth_value & 0b01000) >> 3
-
-    # Extract keypress (Bit 4)
-    # Mask is 16 (binary 0b10000)
     keypress = (auth_value & 0b10000) >> 4
-
-    # Return the extracted values
     return bond, mitm, sc, keypress
 
 def find_device_by_name(name: str, pkt) -> bool:

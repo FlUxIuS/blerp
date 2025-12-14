@@ -1,14 +1,8 @@
 #!./pyble/bin python
 import argparse
-import asyncio
-import datetime
-import fcntl
 import logging
 import signal
-import socket
 import sys
-from operator import add
-from tkinter.constants import NONE
 
 from att import ATTManager
 from constants import *
