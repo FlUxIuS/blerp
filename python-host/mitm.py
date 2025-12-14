@@ -38,119 +38,24 @@ class Mitm:
 
     def __init__(
         self,
-        peripheral_addr=None,
-        peripheral_addr_type=1,
-        central_addr=None,
-        central_addr_type=0,
-        devids=[0, 1],
+        dev_id_cent: int,
+        dev_id_prph: int,
     ):
         self.peripheral = Device(
-            id=devids[0],
+            id=dev_id_prph,
             role=BLE_ROLE_PERIPHERAL,
-            addr=peripheral_addr,
-            addr_type=peripheral_addr_type,
         )
         self.central = Device(
-            id=devids[1],
+            id=dev_id_cent,
             role=BLE_ROLE_CENTRAL,
-            addr=central_addr,
-            addr_type=central_addr_type,
         )
 
         self.waiting_msg_from = None
         self.transparent = True
 
-    def on_central_rx(self):
-        pkt = self.central.receive()
-        if pkt is None:
-            return
-
-        if pkt.type != 2:
-            return
-
-        if pkt.cid == BLE_L2CAP_CID_ATT:
-            self.peripheral.forward(pkt)
-            # TODO: Check if the packet needs a response
-            self.waiting_msg_from = self.peripheral.id
-        elif pkt.cid == BLE_L2CAP_CID_SM:
-            return
-            # Pairing remains local
-            pkt = self.central.sm.smp_on_message_rx(pkt)
-            self.central.sm_send(pkt)
-            # if wait_rsp:
-            #     self.waiting_msg_from = self.peripheral.id
-            # else:
-            #     self.waiting_msg_from = self.central.id
-
-    async def handle_peripheral_pairing(self, pkt):
-        rsp = self.peripheral.sm.smp_on_message_rx(pkt)
-        for p in rsp:
-            self.peripheral.sm_send(p)
-
-    def on_peripheral_rx(self):
-        pkt = self.peripheral.receive()
-        if pkt is None:
-            return
-
-        if pkt.type == 2:
-            if pkt.cid == BLE_L2CAP_CID_ATT:
-                self.central.forward(pkt)
-                # TODO: Check if the packet needs a response
-                self.waiting_msg_from = self.central.id
-            elif pkt.cid == BLE_L2CAP_CID_SM:
-                if SM_Pairing_Request in pkt:
-                    pass
-                #     self.central.sm.pair()
-                # I should start a thread to handle the pairing in the background since it is separate
-                # Pairing remains local
-
-            # if wait_rsp:
-            #     self.waiting_msg_from = self.central.id
-            # else:
-            #     self.waiting_msg_from = self.peripheral.id
-
-        # if pkt.type == 4 and not self.transparent:
-        #     if pkt.getlayer(HCI_LE_Meta_Connection_Update_Complete) is not None:
-        #         if int(pkt.status) == 255:
-        #             authreq = 1 << 0 | 1 << 2 | 1 << 3 | 0 << 4
-        #             self.peripheral.sm_send(SM_Security_Request(authentication=authreq))
-        #             self.waiting_msg_from = self.peripheral.id
-        #             return
-
-        # Forward to Central
-        # self.central.forward(pkt)
-        # self.waiting_msg_from = self.central.id
-
-    def on_message_rx(self, pkt, src):
-        # Central
-        if src == BLE_ROLE_CENTRAL:
-            pkt = self.central.on_message_rx()
-            if pkt is not None:
-                self.peripheral.forward(pkt)
-                return
-        # Peripheral
-        elif src == BLE_ROLE_PERIPHERAL:
-            pkt = self.peripheral.on_message_rx(pkt)
-            # if pkt is not None and SM_Pairing_Request in pkt:
-            #     print("We received pairing req, starting MITM")
-            #     self.peripheral.forwarding = False
-            #     self.peripheral.start_pairing(pkt)
-            #     # self.peripheral.on_message_rx(pkt)
-            #     self.peripheral.forwarding = True
-            #     # await self.peripheral.pairing_task
-            #     self.central.forwarding = False
-            #     self.central.start_pairing()
-            #     self.central.forwarding = True
-
-            # await self.peripheral.pairing_task
-            # await self.central.pairing_task
-
-            if pkt is not None:
-                self.central.forward(pkt)
-
 
 def foward_to_dev(dev_from: Device, dev_to: Device):
-    logging.info(f"Forwarding from {dev_from.role} to {dev_to.role}")
+    logging.info("Forwarding...")
     while True:
         pkt = dev_from.on_message_rx(dev_from.receive())
         if pkt is not None:
@@ -223,32 +128,21 @@ if __name__ == "__main__":
     # Parse device IDs from comma-separated string to list of integers
     dev_ids = [int(x.strip()) for x in args.dev_ids.split(",")]
 
-    mitm = Mitm(
-        central_addr=args.central_addr,
-        central_addr_type=addr_type_map[args.central_addr_type],
-        devids=dev_ids,
-    )
+    mitm = Mitm(dev_ids[0], dev_ids[1])
 
     # input("Disconnect your devices and then press any key to proceed...")
 
     # Enable or disable packets passthru
     mitm.transparent = True
 
-    mitm.central.initialize()
+    mitm.central.initialize(args.central_addr, addr_type_map[args.central_addr_type])
 
-    # Connect to Peripheral to stop its advertising, do not pair yet
     # Peripheral address and address type are inferred from advertisement data
     prph_addr, prph_addr_type, adv_data = mitm.central.start_targeted_scan(
-        bname=args.peripheral_name, get_data=True
+        target=args.peripheral_name, get_data=True
     )
 
-    print("Gathered Peripheral target data")
-
-    mitm.peripheral.addr = prph_addr
-    mitm.peripheral.addr_type = prph_addr_type
-
-    mitm.peripheral.initialize()
-    print("Initialized peripheral")
+    mitm.peripheral.initialize(prph_addr, prph_addr_type)
     mitm.peripheral.set_adv_data(prph_addr, prph_addr_type, adv_data)
 
     mitm.peripheral.forwarding = True

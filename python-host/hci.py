@@ -4,7 +4,7 @@ from typing import final
 from scapy.layers.bluetooth import *
 from scapy.layers.bluetooth4LE import *
 
-# def send_cmd(sock: BluetoothUserSocket, cmd: Packet):
+# def send_cmd(sock: BluetoothSocket, cmd: Packet):
 #     pkt = HCI_Hdr() / HCI_Command_Hdr() / cmd
 #     # opcode = pkt.opcode
 
@@ -18,7 +18,7 @@ from scapy.layers.bluetooth4LE import *
 #             return r
 
 
-# def on_message_rx(dev: Device, sock: BluetoothUserSocket, cmd: Packet):
+# def on_message_rx(dev: Device, sock: BluetoothSocket, cmd: Packet):
 #     if cmd is None:
 #         return False
 
@@ -38,12 +38,12 @@ from scapy.layers.bluetooth4LE import *
 #     return False
 
 
-def wait_event(sock: BluetoothUserSocket, evt):
+def wait_event(sock: BluetoothSocket, evt):
     """
     Wait for one or more events.
 
     Args:
-        sock: BluetoothUserSocket to receive from
+        sock: BluetoothSocket to receive from
         evt: Either a single Packet type or a list of Packet types to wait for
 
     Returns:

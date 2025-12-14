@@ -8,10 +8,12 @@ import signal
 import socket
 import sys
 from operator import add
+from tkinter.constants import NONE
 
 from att import ATTManager
 from constants import *
-from hci import wait_event
+
+# from hci import wait_event
 from helpers import *
 from scapy.compat import raw
 from scapy.layers.bluetooth import *
@@ -37,24 +39,24 @@ class Device:
         self,
         id: int,
         role: int,
-        addr: str,
-        addr_type: int,
+        addr: str = None,
+        addr_type: int = None,
     ):
-        self.id = id
-        self.role = role
-        self.handle = None
-        self.sm = SecurityManager(role)
+        self.id: int = id
+        self.role: int = role
+        self.handle: int = 0
+        self.sm: SecurityManager = SecurityManager(role)
         self.att = ATTManager()
-        self.forwarding = False
-        self.sock = None
-        self.mtu = 23  # TODO update this dinamically
-        self.addr = addr
-        self.addr_type = addr_type
+        self.forwarding: bool = False
+        self.sock: BluetoothSocket = get_socket(id)
+        self.mtu: int = 23  # TODO update this dinamically
+        self.addr: str = addr
+        self.addr_type: int = addr_type
         self.start_time = 0
         self.encrypted = False
         self.forwarded_packets = 0
         self.initialized = False
-        self.legacy = False
+        self.use_legacy_adv = False
 
     @property
     def own_address(self):
@@ -86,20 +88,21 @@ class Device:
         self.send_hci_cmd(HCI_Cmd_Reset())
         self.send_hci_cmd(HCI_Cmd_Set_Event_Mask())
 
-        if not self.legacy:
+        if not self.use_legacy_adv:
             self.send_hci_cmd(HCI_Cmd_LE_Set_Event_Mask())
 
-        if addr and addr_type:
-            self.set_address(addr, addr_type)
-        else:
-            self.set_address(self.addr, self.addr_type)
+        if addr is not None:
+            self.addr = addr
+            self.addr_type = addr_type
+
+        self.set_address(self.addr, self.addr_type)
 
         # Enable blerp encreq rejection (TODO: make it optional)
         self.send_hci_cmd(HCI_Cmd_LE_Custom_Command(opcode=1))
 
-        if self.legacy:
+        if self.use_legacy_adv:
             self.send_hci_cmd(
-                HCI_Cmd_LE_Set_Advertising_Parameters(oatype=self.addr_type),
+                HCI_Cmd_LE_Set_Advertising_Parameters(own_addr_type=self.addr_type),
             )
             self.send_hci_cmd(HCI_Cmd_LE_Set_Scan_Parameters())
         else:
@@ -108,13 +111,7 @@ class Device:
                     handle=1, own_addr_type=self.addr_type
                 ),
             )
-            if self.addr_type == 1:
-                self.send_hci_cmd(
-                    HCI_Cmd_LE_Set_Advertising_Set_Random_Address(
-                        handle=1, random_addr=self.addr
-                    )
-                )
-            self.send_hci_cmd(HCI_Cmd_LE_Set_Extended_Scan_Parameters(type=1))
+            self.send_hci_cmd(HCI_Cmd_LE_Set_Extended_Scan_Parameters())
 
         self.initialized = True
 
@@ -145,17 +142,25 @@ class Device:
 
     #     self.stop_advertising()
     #     self.start_advertising()
-
+    # p = HCI_Cmd_LE_Set_Extended_Advertise_Enable(
+    #     enable=1,
+    #     sets=[
+    #         HCI_Ext_Adv_Set(handle=0, duration=0, max_events=0),
+    #         HCI_Ext_Adv_Set(handle=1, duration=50, max_events=0)
+    #     ]
+    # )
     def start_advertising(self):
         if self.role == BLE_ROLE_PERIPHERAL:
             self.send_hci_cmd(
-                HCI_Cmd_LE_Set_Extended_Advertising_Enable(handle=1, enable=1),
+                HCI_Cmd_LE_Set_Extended_Advertise_Enable(
+                    enable=1, sets=[HCI_Ext_Adv_Set(handle=1)]
+                ),
             )
             logging.info("Peripheral: Advertising started")
-            pkt = wait_event(self.sock, HCI_LE_Meta_Enhanced_Connection_Complete)
+            pkt = self.sock.wait_event(HCI_LE_Meta_Enhanced_Connection_Complete)
             if pkt is not None:
                 self.handle = pkt.handle
-                self.sm.set_peer_address(pkt.paddr, pkt.patype)
+                self.sm.set_peer_address(pkt.peer_addr, pkt.peer_addr_type)
 
                 logging.info("Peripheral: Connection complete")
                 # tmp = L2CAP_Connection_Parameter_Update_Request(min_interval=20, max_interval=36, slave_latency=4, timeout_mult=90)
@@ -167,7 +172,9 @@ class Device:
 
     def stop_advertising(self):
         self.send_hci_cmd(
-            HCI_Cmd_LE_Set_Extended_Advertising_Enable(handle=1, enable=0)
+            HCI_Cmd_LE_Set_Extended_Advertise_Enable(
+                enable=0, sets=[HCI_Ext_Adv_Set(handle=1, duration=0, max_events=0)]
+            )
         )
 
     def copy_adv_data(self, pkt: Packet):
@@ -176,16 +183,12 @@ class Device:
         elif HCI_LE_Meta_Extended_Advertising_Report in pkt:
             pass
 
-    def set_adv_data(self, addr, addr_type, raw_data: list = []):
-        # Set address
-        self.addr = addr
-        self.addr_type = addr_type
-
+    def set_adv_data(self, adv_data=None):
         # If no data is passed, copy a generic mouse
-        if len(raw_data) == 0:
+        if adv_data is None:
             appearance = 962
             service = 0x1812
-            raw_data = [
+            adv_data = [
                 EIR_Hdr()
                 / EIR_Flags(flags=["general_disc_mode", "br_edr_not_supported"]),
                 EIR_Hdr() / EIR_CompleteList16BitServiceUUIDs(svc_uuids=[service]),
@@ -194,13 +197,18 @@ class Device:
                 / EIR_Raw(data=appearance.to_bytes(2, byteorder="little")),
             ]
 
+        if self.addr_type == 1:
+            self.send_hci_cmd(
+                HCI_Cmd_LE_Set_Advertising_Set_Random_Address(handle=1, addr=self.addr)
+            )
+
         self.send_hci_cmd(
-            HCI_Cmd_LE_Set_Extended_Advertising_Data(handle=1, data=raw_data)
+            HCI_Cmd_LE_Set_Extended_Advertising_Data(handle=1, data=adv_data)
         )
 
     def start_scanning(self):
         try:
-            if self.legacy:
+            if self.use_legacy_adv:
                 self.send_hci_cmd(HCI_Cmd_LE_Set_Scan_Enable(filter_dups=0))
             else:
                 self.send_hci_cmd(HCI_Cmd_LE_Set_Extended_Scan_Enable(filter_dups=0))
@@ -212,7 +220,7 @@ class Device:
 
     def stop_scanning(self):
         try:
-            if self.legacy:
+            if self.use_legacy_adv:
                 self.send_hci_cmd(HCI_Cmd_LE_Set_Scan_Enable())
             else:
                 self.send_hci_cmd(HCI_Cmd_LE_Set_Extended_Scan_Enable(enable=0))
@@ -227,13 +235,13 @@ class Device:
 
     def start_targeted_scan(
         self,
-        bdaddr: str = None,
-        bname: str = None,
+        target: str,
         get_data: bool = False,
         timeout: int = 5,
     ):
+        target_is_mac = is_valid_mac(target)
         self.start_scanning()
-        dev_list = set()
+        # dev_list = set()
         start_time = time.time()
         while True:
             if timeout and (time.time() - start_time) > timeout:
@@ -241,88 +249,79 @@ class Device:
                 logging.warning(f"Scan timeout after {timeout}s")
                 return None, None, None
 
-            pkt = wait_event(
-                self.sock,
+            pkt = self.sock.wait_event(
                 [
                     HCI_LE_Meta_Advertising_Report,
                     HCI_LE_Meta_Extended_Advertising_Report,
                 ],
             )
-            addr = None
-            addr_type = None
-            adv_type = "Legacy"
+            # addr = None
+            # addr_type = None
+            # adv_type = "Legacy"
             if pkt is None:
                 continue
 
             if HCI_LE_Meta_Extended_Advertising_Report in pkt:
-                adv_type = "Extended"
+                # adv_type = "Extended"
                 pkt = pkt[HCI_LE_Meta_Extended_Advertising_Report]
-                addr = pkt.address
-                addr_type = pkt.address_type
-            elif HCI_LE_Meta_Advertising_Report in pkt:
+            else:
                 pkt = pkt[HCI_LE_Meta_Advertising_Report]
-                addr = pkt.addr
-                addr_type = pkt.atype
 
+                #     addr = pkt.address
+                #     addr_type = pkt.address_type
+                # elif HCI_LE_Meta_Advertising_Report in pkt:
+                #     pkt = pkt[HCI_LE_Meta_Advertising_Report]
+            addr = pkt.addr
+            addr_type = pkt.addr_type
+            # pip install git+https://github.com/user/my_package.git@master#egg=my_package
             # if addr not in dev_list:
             #     dev_list.add(addr)
-            logging.info(f"Found device: {addr} type: {adv_type}")
+            logging.info(f"Found device: {addr}")
 
             found = False
-            if bdaddr and bdaddr.lower() == addr.lower():
-                found = True
-                logging.info(f"Target address acquired: {addr}")
-            elif bname:
-                if addr.lower() == "dd:4c:ba:15:c1:79":
-                    print(bname)
-                found = find_device_by_name(bname, pkt)
+
+            if target_is_mac:
+                found = target.lower() == addr.lower()
+            else:
+                found = find_device_by_name(target, pkt)
 
             if found:
-                logging.info(f"Target name '{bname}' acquired: {addr}")
+                logging.info(f"Target acquired")
                 self.stop_scanning()
                 if get_data:
                     return addr, addr_type, pkt.data
                 return addr, addr_type, None
 
     def set_address(self, addr, addr_type):
-        self.addr = addr
-        self.addr_type = addr_type
         self.sm.set_own_address(addr, addr_type)
         cmd = (
-            HCI_Cmd_LE_Set_Random_Address(address=addr)
+            HCI_Cmd_LE_Set_Random_Address(addr=addr)
             if addr_type == 1
-            else HCI_Cmd_LE_Set_Public_Address(address=addr)
+            else HCI_Cmd_LE_Set_Public_Address(addr=addr)
         )
         self.send_hci_cmd(cmd)
 
-    def connect(self, bdaddr, addr_type=1, extended: bool = True):
-        if self.role == BLE_ROLE_CENTRAL:
-            self.send_hci_cmd(
-                HCI_Cmd_LE_Extended_Create_Connection(
-                    patype=addr_type,
-                    paddr=bdaddr,
-                ),
-            )
-            print("Central: Sent connection request.")
-            pkt = wait_event(
-                self.sock,
-                HCI_LE_Meta_Enhanced_Connection_Complete,
-            )  # We block until we get connection complete
+    def connect(self, bdaddr, addr_type, extended: bool = True):
+        if self.role != BLE_ROLE_CENTRAL:
+            return
+        self.send_hci_cmd(
+            HCI_Cmd_LE_Extended_Create_Connection(
+                peer_addr_type=addr_type,
+                peer_addr=bdaddr,
+            ),
+        )
+        pkt = self.sock.wait_event(
+            HCI_LE_Meta_Enhanced_Connection_Complete,
+        )  # We block until we get connection complete
 
-            if pkt is not None:
-                self.handle = pkt.handle
-                self.sm.set_peer_address(pkt.paddr, pkt.patype)
-                logging.info(f"Central: Connection complete")
-
-                # time.sleep(1)
-                # if not self.mitm:
-                # self.sm.pair(self.sock, self.handle)
-            # pair_req = self.sm.pair(bdaddr, addr_type)[0]
-            # self.sm_send(pair_req)
+        if pkt is not None:
+            self.handle = pkt.handle
+            self.sm.set_peer_address(pkt.peer_addr, pkt.peer_addr_type)
+            logging.info(f"Central: Connection complete")
 
     def disconnect(self):
         if self.send_hci_cmd(HCI_Cmd_Disconnect(handle=self.handle, reason=0x13)):
-            wait_event(self.sock, HCI_Event_Disconnection_Complete)
+            self.sock.wait_event(HCI_Event_Disconnection_Complete)
             logging.info("Disconnected")
 
     def reset(self):
@@ -361,22 +360,15 @@ class Device:
 
     def hci_handler(self, pkt: Packet):
         if HCI_LE_Meta_Long_Term_Key_Request in pkt:
-            # assert self.sm.ltk is not None
-            if self.role == BLE_ROLE_PERIPHERAL:
-                # logging.info(f"Long Term Key Request")
-                if self.sm.stk is None:
-                    self.send_hci_cmd(
-                        HCI_Cmd_LE_Long_Term_Key_Request_Negative_Reply(
-                            handle=pkt.handle
-                        ),
-                    )
-                else:
-                    self.send_hci_cmd(
-                        HCI_Cmd_LE_Long_Term_Key_Request_Reply(
-                            handle=pkt.handle, ltk=self.sm.stk
-                        ),
-                    )
-            # logging.info(f"Long Term Key Request")
+            if self.role != BLE_ROLE_PERIPHERAL:
+                return
+            if self.sm.stk is None:
+                rsp = HCI_Cmd_LE_Long_Term_Key_Request_Negative_Reply(handle=pkt.handle)
+            else:
+                rsp = HCI_Cmd_LE_Long_Term_Key_Request_Reply(
+                    handle=pkt.handle, ltk=self.sm.stk
+                )
+            self.send_hci_cmd(rsp)
         elif HCI_Event_Encryption_Change in pkt:
             if not self.encrypted and pkt.status == 0:
                 self.sm.distribute_keys(self.sock, self.handle)
@@ -419,13 +411,12 @@ class Device:
         #         self.pairing_task.cancel()
 
     def listen(self):
-        print("Listening")
         while True:
             self.on_message_rx(self.receive())
             if self.encrypted and not self.sm.complete:
                 self.sm.complete = True
                 logging.info("Pairing completed")
-                break
+                # break
 
     # def __del__(self):
     #     if self.sock is not None:
@@ -471,8 +462,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--addr",
-        default="F8:1A:2B:3F:27:2F",
-        help="Own Bluetooth address (default: F8:1A:2B:3F:27:2F)",
+        help="Own Bluetooth address",
     )
     parser.add_argument(
         "--addr-type",
@@ -491,19 +481,27 @@ if __name__ == "__main__":
 
     role = BLE_ROLE_CENTRAL if args.role == "central" else BLE_ROLE_PERIPHERAL
 
-    with Device(
-        id=args.hci, role=role, addr=args.addr, addr_type=args.addr_type
-    ) as dev:
-        dev.initialize()
+    with Device(id=args.hci, role=role) as dev:
 
         if role == BLE_ROLE_CENTRAL:
-            target_name = args.target if args.target else "SIMOLANER"
-            addr, addr_type, data = dev.start_targeted_scan(
-                bname=target_name, get_data=True
+            if not args.target:
+                logging.error("--target is requires in Central mode")
+                sys.exit()
+
+            addr = "00:1A:79:FF:EE:DD"
+            addr_type = 0
+            if args.addr is not None and args.addr_type is not None:
+                addr = args.addr
+                addr_type = args.addr_type
+
+            dev.initialize(addr=addr, addr_type=addr_type)
+
+            addr, addr_type, adv_data = dev.start_targeted_scan(
+                target=args.target, get_data=True
             )
 
             if addr is None:
-                logging.error(f"Target device '{target_name}' not found")
+                logging.error(f"Target device not found")
                 sys.exit(1)
 
             dev.connect(bdaddr=addr, addr_type=addr_type)
@@ -511,18 +509,27 @@ if __name__ == "__main__":
             dev.sm.pair(dev.sock, dev.handle)
             dev.listen()
         else:
+            # By default use some bogus random address
+            addr = "F8:4C:6D:E9:7A:B1"
+            addr_type = 1
             adv_data = None
+
+            if args.addr and args.addr_type:
+                addr = args.addr
+                addr_type = args.addr_type
+
             if args.impersonate and args.target:
                 addr, addr_type, adv_data = dev.start_targeted_scan(
-                    bname=args.target, get_data=True
+                    target=args.target, get_data=True
                 )
 
-            dev.stop_advertising()
 
             dev.initialize(addr, addr_type)
+            dev.stop_advertising()
+
             # dev.set_address(addr, addr_type)
 
-            dev.set_adv_data(addr, addr_type, adv_data)
+            dev.set_adv_data(adv_data)
 
             dev.start_advertising()
 

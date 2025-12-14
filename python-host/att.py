@@ -1,7 +1,7 @@
 from typing import Optional, Tuple
 
 from constants import *
-from helpers import l2cap_send
+from helpers import l2cap_send, BluetoothSocket
 from scapy.layers.bluetooth import *
 
 
@@ -14,18 +14,18 @@ class ATTManager:
             b"\x41\x00\xff\xff\x6d\x04\x00\x20\x1f\x01\x00\x80\x00\x10\x00\x00\x00\x00\x01\x00",
         ]
 
-    def send(self, sock: BluetoothUserSocket, handle: int, pkt: Packet):
+    def send(self, sock: BluetoothSocket, handle: int, pkt: Packet):
         l2cap_send(sock, handle, cmd=ATT_Hdr() / pkt, cid=BLE_L2CAP_CID_ATT)
 
-    # def do_gatt_read(self, sock: BluetoothUserSocket, handle: int, uuid: int):
+    # def do_gatt_read(self, sock: BluetoothSocket, handle: int, uuid: int):
     #     self.send(sock, handle, ATT_Read_Request(uuid=uuid))
     #     pass
 
-    # def do_gatt_write(self, sock: BluetoothUserSocket, handle: int, data: bytes):
+    # def do_gatt_write(self, sock: BluetoothSocket, handle: int, data: bytes):
     #     self.send(sock, handle, ATT_Write_Request(data=data))
     #     pass
 
-    def on_message_rx(self, sock: BluetoothUserSocket, handle: int, pkt: Packet):
+    def on_message_rx(self, sock: BluetoothSocket, handle: int, pkt: Packet):
         if ATT_Exchange_MTU_Request in pkt:
             self.send(sock, handle, ATT_Exchange_MTU_Response(mtu=self.mtu))
         elif ATT_Read_By_Group_Type_Request in pkt:
