@@ -97,8 +97,7 @@ let processB(pk: key) =
         event end_B(pk_new).
 
 process
-    new pk: key;
-    (
-        !processA(pk) |
-        !processB(pk)
+    !(
+        new pk: key;
+        (processA(pk) | processB(pk))
     )
