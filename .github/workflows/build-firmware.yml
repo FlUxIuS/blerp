@@ -1,0 +1,107 @@
+name: Build BLERP Firmware
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ARM GNU Toolchain 14.3.Rel1
+        run: |
+          wget -q https://developer.arm.com/-/media/Files/downloads/gnu/14.3.rel1/binrel/arm-gnu-toolchain-14.3.rel1-x86_64-arm-none-eabi.tar.xz -O /tmp/arm-toolchain.tar.xz
+          sudo tar xf /tmp/arm-toolchain.tar.xz -C /opt/
+          echo "/opt/arm-gnu-toolchain-14.3.rel1-x86_64-arm-none-eabi/bin" >> $GITHUB_PATH
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Install Apache Newt
+        run: |
+          go install mynewt.apache.org/newt/newt@latest
+          sudo cp "$(go env GOPATH)/bin/newt" /usr/local/bin/
+          newt version
+
+      - name: Setup BLERP
+        run: |
+          ./setup.sh
+          ./apply_attacks_patch.sh
+
+      - name: Apply tinycbor fixes
+        run: |
+          for p in patches/*.patch; do
+            [ -f "$p" ] && git -C repos/apache-mynewt-core apply "$(pwd)/$p" 2>/dev/null || true
+          done
+          for src in repos/apache-mynewt-core/encoding/tinycbor/src/*.c; do
+            if grep -q 'PRI[ux]64' "$src" && ! grep -q 'BLERP_PRI_FIX' "$src"; then
+              sed -i '/#include <string.h>/a \
+          /* BLERP_PRI_FIX */\
+          #include <inttypes.h>\
+          #ifndef PRIu64\
+          #define PRIu64 "llu"\
+          #endif\
+          #ifndef PRIx64\
+          #define PRIx64 "llx"\
+          #endif\
+          #ifndef PRId64\
+          #define PRId64 "lld"\
+          #endif' "$src"
+            fi
+          done
+
+      - name: Build firmware
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          mkdir -p release
+
+          # bleshell (Central + Peripheral attack shell) - the main BLERP firmware
+          make set-cent-target-10056 build-cent
+          cp bin/targets/nrf52_blecent/app/apps/bleshell/bleshell.elf  release/bleshell-${TAG}.elf
+          cp bin/targets/nrf52_blecent/app/apps/bleshell/bleshell.hex  release/bleshell-${TAG}.hex
+          cp bin/targets/nrf52_blecent/app/apps/bleshell/bleshell.img  release/bleshell-${TAG}.img
+
+          # HCI device (MitM relay boards)
+          newt clean nrf52_hci || true
+          newt build nrf52_hci
+          newt create-image nrf52_hci 1.0.0
+          find bin/targets/nrf52_hci -name '*.elf' ! -name '*.elf.*' -exec cp {} release/blehci-${TAG}.elf \; 2>/dev/null || true
+          find bin/targets/nrf52_hci -name '*.hex' -exec cp {} release/blehci-${TAG}.hex \; 2>/dev/null || true
+          find bin/targets/nrf52_hci -name '*.img' -exec cp {} release/blehci-${TAG}.img \; 2>/dev/null || true
+
+          ls -lah release/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "BLERP Firmware ${{ github.ref_name }}"
+          body: |
+            Pre-built firmware for nRF52840-DK (PCA10056).
+
+            **Firmware:**
+            - `bleshell` — Main attack shell (acts as both Central and Peripheral)
+            - `blehci` — HCI device firmware for MitM relay boards
+
+            **Flash with nrfjprog:**
+            ```bash
+            # Flash bootloader first (one-time)
+            make boot-10056 id=<SERIAL>
+            # Then flash bleshell
+            nrfjprog --program bleshell-${{ github.ref_name }}.hex --sectorerase --snr <SERIAL>
+            nrfjprog --reset --snr <SERIAL>
+            ```
+
+            **Or with JLinkExe:**
+            ```bash
+            JLinkExe -device nRF52840_xxAA -if SWD -speed 4000 -SelectEmuBySN <SERIAL> -CommandFile erase.jlink
+            ```
+            Then load the `.img` at offset `0xc000`.
+
+            See [README](https://github.com/FlUxIuS/blerp) for full usage instructions.
+          files: release/*
